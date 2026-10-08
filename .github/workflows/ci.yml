@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  prek:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+      - run: uv run prek run --all-files --show-diff-on-failure
+
+  test:
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.13", "3.14", "3.15"]
+    runs-on: ubuntu-26.04
+    env:
+      # A read or write falling back to the locale's encoding, which is UTF-8 here but not on Windows before Python 3.15, warns, and the tests fail on any warning.
+      PYTHONWARNDEFAULTENCODING: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: uv run coverage run -m pytest
+      - run: uv run coverage combine
+      - run: uv run coverage report

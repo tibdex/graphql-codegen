@@ -1,0 +1,214 @@
+"An instant, sent as an ISO 8601 string with its offset."
+scalar DateTime
+
+"An amount of money, sent as a decimal string so that no precision is lost."
+scalar Money
+
+"An International Standard Book Number, sent as a string."
+scalar ISBN
+
+"A universally unique identifier, sent as its canonical string."
+scalar UUID
+
+"Any JSON value."
+scalar JSON
+
+type Query {
+  "The book with this identifier or ISBN."
+  book(lookup: BookLookup!): Book
+
+  "The books matching the filter, at most `first` of them."
+  books(filter: BookFilter, first: Int = 20): [Book!]!
+
+  "The publication with this identifier."
+  publication(id: ID!): Publication
+
+  "Everything whose title or name contains the text."
+  search(text: String!): [SearchResult!]!
+
+  "The order with this identifier."
+  order(id: ID!): Order
+
+  "The filter of the saved search with this name, exactly as it was saved."
+  savedSearch(name: String!): BookFilterStruct
+}
+
+type Mutation {
+  "Place an order for the given lines."
+  placeOrder(input: PlaceOrderInput!): Order!
+
+  """
+  Cancel an order that has not shipped yet.
+
+  Null, with an error saying why, for an order that has.
+  Nullable so that when several orders are canceled in one request, one failure leaves the others' results intact.
+
+  """
+  cancelOrder(input: CancelOrderInput!): Order
+
+  "Add copies of a book to the stock."
+  restock(input: RestockInput!): Book!
+}
+
+type Subscription {
+  "The order, each time its status changes."
+  orderStatusChanged(orderId: ID!): Order!
+}
+
+"Something the bookshop sells."
+interface Publication {
+  id: ID!
+  title: String!
+  price: Money!
+}
+
+"A publication printed on paper."
+interface Printed implements Publication {
+  id: ID!
+  title: String!
+  price: Money!
+  pageCount: Int!
+}
+
+type Book implements Publication & Printed {
+  id: ID!
+  title: String!
+  price: Money!
+  pageCount: Int!
+  isbn: ISBN!
+  genre: Genre!
+  "Null for an anthology, which has no single author."
+  author: Author
+  reviews: [Review!]!
+}
+
+type Magazine implements Publication & Printed {
+  id: ID!
+  title: String!
+  price: Money!
+  pageCount: Int!
+  issue: Int!
+}
+
+type Audiobook implements Publication {
+  id: ID!
+  title: String!
+  price: Money!
+  "Its length, in minutes."
+  duration: Int!
+  narrator: String
+}
+
+type Author {
+  id: ID!
+  name: String!
+  books: [Book!]!
+}
+
+type Review {
+  "From 1 to 5."
+  rating: Int!
+  text: String
+  postedAt: DateTime!
+}
+
+union SearchResult = Book | Magazine | Audiobook | Author
+
+enum Genre {
+  FICTION
+  NONFICTION
+  POETRY
+  CHILDREN
+}
+
+enum OrderStatus {
+  PENDING
+  SHIPPED
+  DELIVERED
+  CANCELED
+}
+
+"A loyalty tier."
+enum Membership {
+  STANDARD
+  PREMIUM
+}
+
+type Customer {
+  id: ID!
+  name: String!
+  membership: Membership!
+}
+
+type Order {
+  id: ID!
+  status: OrderStatus!
+  total: Money!
+  placedAt: DateTime!
+  lines: [OrderLine!]!
+  customer: Customer!
+}
+
+type OrderLine {
+  book: Book!
+  quantity: Int!
+}
+
+"A JSON payload with the shape of the input type the implementation is named after."
+interface Struct {
+  value: JSON
+}
+
+type BookFilterStruct implements Struct {
+  value: JSON
+}
+
+"A book, found by exactly one of its identifiers."
+input BookLookup @oneOf {
+  id: ID
+  isbn: ISBN
+}
+
+"The books meeting a condition, or a combination of conditions."
+input BookFilter @oneOf {
+  genre: Genre
+  author: ID
+  priceBelow: Money
+  and: [BookFilter!]
+  or: [BookFilter!]
+  not: BookFilter
+}
+
+input PlaceOrderInput {
+  "Makes placing the same order twice harmless: the client sends a new one per order."
+  idempotencyKey: UUID
+  lines: [OrderLineInput!]!
+  shippingAddress: Address!
+  giftWrap: Boolean! = false
+  coupons: [String!]! = []
+  note: String
+}
+
+input OrderLineInput {
+  book: ID!
+  quantity: Int! = 1
+}
+
+input Address {
+  street: String!
+  city: String!
+  postalCode: String!
+  country: String!
+}
+
+input CancelOrderInput {
+  "Makes canceling the same order twice harmless."
+  idempotencyKey: UUID
+  order: ID!
+  reason: String
+}
+
+input RestockInput {
+  book: ID!
+  copies: Int!
+}

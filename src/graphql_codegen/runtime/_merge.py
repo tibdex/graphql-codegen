@@ -1,0 +1,153 @@
+# Copied into each generated package, where this line says not to edit it.
+
+from collections.abc import Mapping, Sequence
+from functools import cache
+from json import dumps
+from typing import Any, Final
+
+from ._literal import OperationType
+from ._sigil import SIGIL
+from .error import Error
+from .operation import Operation
+
+MERGED_OPERATION_NAME: Final = "MergedOperation"
+
+_INDEX_SEPARATOR: Final = "_"
+
+
+@cache
+def _template_parts(document: str, /) -> tuple[str, str, Mapping[str, str]]:
+    """The generator prints a template like any document: the operation first, its header on one line, then its root fields, then each fragment after a blank line.
+
+    Cached: the documents of a generated package are few and fixed.
+    """
+    operation, *fragment_definitions = document.split("\n\n")
+    header, *root_selections, _ = operation.split("\n")
+    # An operation holding the sigil has no directives, so its header ends with its variable definitions, if any.
+    variable_definitions = (
+        header[header.index("(") + 1 : header.rindex(")")] if "(" in header else ""
+    )
+    fragments = {
+        definition.split(" ", 2)[1]: definition for definition in fragment_definitions
+    }
+    return variable_definitions, "\n".join(root_selections), fragments
+
+
+def encode_body(
+    parts: Sequence[tuple[Operation[OperationType, Any, object], Mapping[str, object]]],
+    /,
+) -> bytes:
+    """Merging lets a server see several operations at once, such as mutations it can apply in one step, and saves round trips.
+
+    Each operation's variables and root fields are suffixed with its index in the merge, so that the operations cannot collide.
+    The generator writes a sigil wherever the index goes, so suffixing is plain string replacement.
+
+    A lone operation is sent as is, so that the server knows it by its own name.
+    """
+    if not parts:
+        raise ValueError("Cannot merge no operation.")
+
+    if len(parts) == 1:
+        ((operation, operation_variables),) = parts
+        return operation._request_body(operation_variables)
+
+    operation_types = {operation._operation_type for operation, _ in parts}
+
+    if len(operation_types) != 1:
+        raise ValueError(
+            f"Cannot merge operations of different types: {', '.join(sorted(operation_types))}.",
+        )
+
+    (operation_type,) = operation_types
+    variable_definitions: list[str] = []
+    selections: list[str] = []
+    fragments: dict[str, str] = {}
+    variables: dict[str, object] = {}
+
+    for index, (operation, operation_variables) in enumerate(parts):
+        if SIGIL not in operation._document:
+            raise ValueError(
+                f"Cannot merge `{operation._name}`: its document has no `{SIGIL}` where its index would go."
+            )
+
+        definitions, root_selections, operation_fragments = _template_parts(
+            operation._document
+        )
+        suffix = f"{_INDEX_SEPARATOR}{index}"
+
+        if definitions:
+            variable_definitions.append(definitions.replace(SIGIL, suffix))
+
+        selections.append(root_selections.replace(SIGIL, suffix))
+        fragments.update(operation_fragments)
+        variables.update(
+            {f"{name}{suffix}": value for name, value in operation_variables.items()}
+        )
+
+    signature = f"({', '.join(variable_definitions)})" if variable_definitions else ""
+    document = "\n\n".join(
+        [
+            "\n".join(
+                [
+                    f"{operation_type} {MERGED_OPERATION_NAME}{signature} {{",
+                    *selections,
+                    "}",
+                ]
+            ),
+            *fragments.values(),
+        ],
+    )
+    return dumps(
+        {
+            "operationName": MERGED_OPERATION_NAME,
+            "query": document,
+            "variables": variables,
+        },
+    ).encode()
+
+
+def _split_response_name(key: str, /) -> tuple[str, int]:
+    response_name, index = key.rsplit(_INDEX_SEPARATOR, 1)
+    return response_name, int(index)
+
+
+def split_merged_data(
+    data: Mapping[str, object], /, *, count: int
+) -> Sequence[Mapping[str, object]]:
+    """Preallocated, so that an operation whose every root field `@skip` left out still gets its own, empty, data rather than shifting the others'."""
+    if count == 1:
+        return [data]
+
+    split: list[dict[str, object]] = [{} for _ in range(count)]
+
+    for key, value in data.items():
+        response_name, index = _split_response_name(key)
+        split[index][response_name] = value
+
+    return split
+
+
+def split_merged_errors(
+    errors: Sequence[Error], /, *, count: int
+) -> Sequence[Sequence[Error]]:
+    """An error's path starts with the suffixed response name of the root field it concerns, which tells its operation.
+
+    An error without a path concerns them all.
+    """
+    if count == 1:
+        return [errors]
+
+    split: list[list[Error]] = [[] for _ in range(count)]
+
+    for error in errors:
+        path = error.get("path")
+
+        if not path or not isinstance(path[0], str):
+            for operation_errors in split:
+                operation_errors.append(error)
+            continue
+
+        response_name, index = _split_response_name(path[0])
+        split[index].append({**error, "path": [response_name, *path[1:]]})
+
+    return split

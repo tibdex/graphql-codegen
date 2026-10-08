@@ -1,0 +1,171 @@
+[build-system]
+build-backend = "uv_build"
+requires = ["uv-build>=0.12.23,<0.13"]
+
+[project]
+authors = [{ name = "Thibault Derousseaux" }]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3 :: Only",
+  # The versions CI tests.
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: 3.15",
+  "Topic :: Software Development :: Code Generators",
+  "Typing :: Typed",
+]
+dependencies = [
+  "graphql-core>=3.3.0",
+  # Python 3.15 is the first whose standard library has all it provides.
+  "typing-extensions>=4.16.0; python_version < '3.15'",
+]
+description = "Turns a GraphQL schema and your operations into a typed Python client with no imposed transport, no validation overhead, and no runtime dependencies."
+keywords = [
+  "client",
+  "code generation",
+  "codegen",
+  "graphql",
+  "sans-io",
+  "typeddict",
+]
+license = "MIT"
+license-files = ["LICENSE"]
+name = "graphql-codegen"
+readme = "README.md"
+requires-python = ">=3.12"
+version = "0.1.0"
+
+[project.optional-dependencies]
+# Only reading a YAML graphql-config file needs it.
+yaml = ["pyyaml>=6.0.3"]
+
+[project.scripts]
+graphql-codegen = "graphql_codegen._cli:main"
+
+[dependency-groups]
+dev = [
+  "coverage",
+  "httpx2",          # The bookshop's transport.
+  "pyright[nodejs]", # With the Node.js it runs on, rather than whichever is installed.
+  "pyrefly",
+  "pytest",
+  "pyyaml",
+  "ruff",
+  "ty",
+  "types-pyyaml",    # So that `_get_loader()` can return `yaml.safe_load` typed.
+  "prek",
+]
+
+[tool.uv.build-backend]
+module-name = "graphql_codegen"
+# The document `_introspection_graphql.py` is generated from, which only the tests regenerate it with.
+wheel-exclude = ["*.graphql"]
+
+[tool.coverage.run]
+branch = true
+# Combining is what merges the runtime's copy into the runtime, per `paths`.
+parallel = true
+# `python -m graphql_codegen` runs in a subprocess.
+patch = ["subprocess"]
+# The bookshop's copy of the runtime too, since the tests running its client exercise that copy.
+source_pkgs = ["bookshop.client.runtime", "graphql_codegen"]
+
+[tool.coverage.paths]
+# Each file of the bookshop's runtime counts as the one it is copied from, which `test_cli.py` checks it is, but for its first line.
+runtime = ["src/graphql_codegen/runtime/", "*/bookshop/client/runtime/"]
+
+[tool.coverage.report]
+exclude_also = [
+  # The arm of an exhaustive `match` a type checker proves unreachable.
+  '^[ \t]*case _ as never:\n[ \t]*assert_never\(never\)$',
+  # A version check and its `else`: each branch runs on its own Python versions only, and only imports names, which its versions' tests already need.
+  '^if sys\.version_info >= \(3, \d+\):\n(?:[ \t]+.*\n|\n)*else:$',
+  "@overload",
+]
+fail_under = 100
+show_missing = true
+skip_covered = true
+
+[tool.pytest]
+filterwarnings = ["error"]
+strict = true
+testpaths = ["tests"]
+
+[tool.ruff]
+extend-exclude = [
+  # Generated.
+  "bookshop/client",
+  "bookshop/*_graphql.py",
+  "src/graphql_codegen/_cli/*_graphql.py",
+  # Its snippets are the generated client and the bookshop's modules verbatim, which `test_readme.py` checks.
+  "README.md",
+]
+
+[tool.ruff.lint]
+ignore = [
+  "ASYNC109", # A transport takes the timeout of the HTTP client it wraps.
+  "C901",     # Judged in review rather than by counting branches.
+  "COM812",   # Conflicts with the formatter.
+  "CPY001",
+  "D100",
+  "D101",
+  "D102",
+  "D103",
+  "D104",
+  "D105",
+  "D106",
+  "D107",
+  "E501",
+  "EM101",
+  "EM102",
+  "ISC001",   # Conflicts with the formatter.
+  "PLC0414",  # `X as X` is how PEP 484 marks a re-export, in any module and not only an `__init__.py`.
+  "PLR0913",  # Keyword-only parameters, as every setting is, do not add up.
+  "S101",     # Asserts state what the type checkers cannot prove.
+  "TC",       # `get_type_hints()` resolves annotations at run time, so what they name must be imported then.
+  "TRY003",
+  "UP046",    # `Generic` declares what PEP 695 cannot: a default before Python 3.13, as a client's transport has, and a variance, as `Operation` has.
+]
+select = ["ALL"]
+
+[tool.ruff.lint.per-file-ignores]
+# Examples printing, and asserting on what an error carries to show it: pytest's rules are for tests.
+"bookshop/*" = ["PT017", "T201"]
+# Asserts combine the conditions one message explains, and the library's modules reach each other's private members: a leading underscore keeps a name from callers, not from the library.
+"src/*" = ["PT018", "SLF001"]
+# Copied into every generated package, whatever its name.
+"src/graphql_codegen/runtime/*" = ["TID252"]
+"src/graphql_codegen/_cli/__init__.py" = ["T201"]
+# Scripts the tests run, not modules they import.
+"tests/__resources__/*" = ["INP001"]
+# Fakes take arguments they ignore, names mirror GraphQL's, as generated ones do, and subprocesses run what the tests build.
+"tests/*" = [
+  "ANN401",
+  "ARG001",
+  "ARG005",
+  "N801",
+  "N815",
+  "PLR0917",
+  "PLR2004",
+  "S603",
+  "SLF001",
+]
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ty.analysis]
+respect-type-ignore-comments = false
+strict-equality-semantics = true
+
+[tool.ty.rules]
+# `unused-ignore-comment` included: tests prove a call is a type error by suppressing it, which only holds when a suppression no longer needed fails.
+all = "error"
