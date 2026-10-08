@@ -1,0 +1,29 @@
+# The generated client is compared byte for byte by the golden tests.
+exclude = "^bookshop/client/"
+
+[[repos]]
+repo = "local"
+
+[[repos.hooks]]
+id = "ruff-check"
+name = "ruff check"
+language = "system"
+entry = "uv run ruff check --force-exclude --fix --exit-non-zero-on-fix"
+types = ["python"]
+require_serial = true
+
+[[repos.hooks]]
+id = "ruff-format"
+name = "ruff format"
+language = "system"
+entry = "uv run ruff format --force-exclude --exit-non-zero-on-format"
+types = ["python"]
+require_serial = true
+
+[[repos.hooks]]
+id = "ty"
+name = "ty check"
+language = "system"
+entry = "uv run ty check"
+pass_filenames = false
+always_run = true

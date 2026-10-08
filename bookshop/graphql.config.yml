@@ -1,0 +1,37 @@
+# An SDL file here, but globs, introspection results, and server URLs work too.
+schema: schema.graphqls
+documents: "*.graphql"
+# This library's config, under its extension name.
+extensions:
+  pythonCodegen:
+    # Where imports start, relative to this file's directory.
+    moduleRoot: ..
+    # Dotted name from the module root, so written to `bookshop/client`.
+    package: bookshop.client
+    # Name pattern of each document's module, written next to the document.
+    documentSiblingModule: "{document}_graphql"
+    # Values the client injects, which no call can pass.
+    injectorNames: [idempotencyKey]
+    # Client directive asserting a schema-nullable field is not null.
+    nonNullDirectiveName: nonNull
+    # Each custom scalar's Python type, with its codec if any.
+    scalars:
+      DateTime:
+        type: datetime.datetime
+        codec:
+          decode: ..scalar.decode_datetime
+          encode: ..scalar.encode_datetime
+      ISBN:
+        type: ..scalar.ISBN
+      Money:
+        type: decimal.Decimal
+        codec:
+          decode: decimal.Decimal
+          encode: str
+      UUID:
+        type: uuid.UUID
+        codec:
+          decode: uuid.UUID
+          encode: str
+    # Interface of object types carrying a JSON payload shaped like an input.
+    structInterfaceName: Struct

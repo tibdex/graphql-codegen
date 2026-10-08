@@ -1,0 +1,33 @@
+name: Publish
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+      - run: uv build --wheel
+      - uses: actions/upload-artifact@v7
+        with:
+          if-no-files-found: error
+          name: wheel
+          path: dist/*.whl
+
+  publish:
+    needs: build
+    runs-on: ubuntu-26.04
+    environment: publish
+    permissions:
+      # Trusted publishing.
+      id-token: write
+    steps:
+      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: actions/download-artifact@v8
+        with:
+          name: wheel
+          path: dist
+      - run: uv publish

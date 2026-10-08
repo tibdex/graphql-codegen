@@ -1,0 +1,376 @@
+# Copied into each generated package, where this line says not to edit it.
+
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
+from threading import Lock
+from types import NoneType, UnionType
+from typing import (
+    Annotated,
+    Final,
+    Literal,
+    NotRequired,
+    Required,
+    TypeAliasType,
+    Union,
+    assert_never,
+    cast,
+    final,
+    get_args,
+    get_origin,
+)
+
+from ._compat import (
+    ReadOnly,
+    SentinelType,
+    get_type_hints,
+    is_typeddict,
+)
+from .error import UnexpectedNullError
+
+type Mode = Literal["parse", "partial parse", "serialize"]
+"""What a builder's converters do.
+
+- ``"parse"`` converts the data of a response in place, and raises on the null of a `@nonNull` field.
+- ``"partial parse"`` converts the data of a response with errors in place, propagating the null of a `@nonNull` field to its nearest nullable parent, as the server propagates that of a non-null field which raised.
+- ``"serialize"`` copies variables, converting what they hold to what goes on the wire.
+"""
+
+type Convert = Callable[[object], object]
+"""A parser may convert a mapping in place, a serializer never does."""
+
+_QUALIFIERS: Final = frozenset({NotRequired, ReadOnly, Required})
+
+
+NON_NULL: Final = SentinelType("NON_NULL")
+"""Marks a `@nonNull` field, whose null is legal for the schema but not for the query: null there raises :class:`UnexpectedNullError` instead of passing."""
+
+
+@final
+@dataclass(frozen=True, kw_only=True)
+class Codec[Value, Wire]:
+    decode: Callable[[Wire], Value]
+    encode: Callable[[Value], Wire]
+
+
+def _unwrap(type_: object, /) -> tuple[object, tuple[object, ...]]:
+    """Split *type_* from its :data:`typing.Annotated` metadata, which says what a plain type cannot, such as :data:`NON_NULL` or a :class:`Codec`, and which type checkers ignore."""
+    metadata: list[object] = []
+
+    while True:
+        if isinstance(type_, TypeAliasType):
+            type_ = type_.__value__
+        elif get_origin(type_) in _QUALIFIERS:
+            (type_,) = get_args(type_)
+        elif get_origin(type_) is Annotated:
+            type_, *extra = get_args(type_)
+            metadata.extend(extra)
+        else:
+            return type_, tuple(metadata)
+
+
+def _union_members(type_: object, /) -> tuple[object, ...] | None:
+    return get_args(type_) if get_origin(type_) in (Union, UnionType) else None
+
+
+def _typename_values(type_: object, /) -> tuple[object, ...] | None:
+    hints = get_type_hints(type_, include_extras=True)
+    typename = hints.get("__typename")
+
+    if typename is None:
+        return None
+
+    literal, _ = _unwrap(typename)
+    assert get_origin(literal) is Literal, (
+        f"Expected `{type_}.__typename` to be a `Literal`."
+    )
+    return get_args(literal)
+
+
+def _children(unwrapped_type: object, /) -> tuple[object, ...]:
+    if (members := _union_members(unwrapped_type)) is not None:
+        return members
+
+    if get_origin(unwrapped_type) in (list, Sequence):
+        return get_args(unwrapped_type)
+
+    if is_typeddict(unwrapped_type):
+        return tuple(get_type_hints(unwrapped_type, include_extras=True).values())
+
+    return ()
+
+
+@final
+class _Builder:
+    """Builds converters for one mode, caching them, so that the work is paid once per type rather than once per call, and tying the knot on recursive types.
+
+    The build recurses over the grammar of types (:class:`typing.TypedDict`, lists, `X | None`, type aliases, and unions told apart by `__typename` or, for `@oneOf` inputs, by their single key) rather than over the shapes of any particular document.
+    Nesting, lists of lists, a `@nonNull` under a list, and recursive inputs thus need no special case.
+    """
+
+    def __init__(self, mode: Mode, /) -> None:
+        match mode:
+            case "parse":
+                parses, partial = True, False
+            case "partial parse":
+                parses, partial = True, True
+            case "serialize":
+                parses, partial = False, False
+            case _ as never:
+                assert_never(never)
+
+        self._parses: Final = parses
+        self._partial: Final = partial
+        self._needs: Final[dict[object, bool]] = {}
+        self._converters: Final[dict[object, Convert]] = {}
+        # Taken by `build()` alone: a recursive type caches a forwarding converter before its real one exists, which another thread must not get, and call, until it resolves.
+        self._lock: Final = Lock()
+
+    def _needs_work(self, type_: object, /) -> bool:
+        if type_ not in self._needs:
+            self._solve_needs(type_)
+
+        return self._needs[type_]
+
+    def _solve_needs(self, root: object, /) -> None:
+        """Settle whether each type reachable from *root* needs work, as a least fixed point.
+
+        Types can reach each other in cycles, such as a filter combining filters, so a type cannot be settled from its children alone: it is settled with everything it reaches.
+
+        """
+        children: dict[object, tuple[object, ...]] = {}
+        needs: dict[object, bool] = {}
+        pending = [root]
+
+        while pending:
+            type_ = pending.pop()
+
+            if type_ in children or type_ in self._needs:
+                continue
+
+            inner, metadata = _unwrap(type_)
+            needs[type_] = any(isinstance(item, Codec) for item in metadata) or (
+                NON_NULL in metadata and self._parses
+            )
+            children[type_] = _children(inner)
+            pending.extend(children[type_])
+
+        changed = True
+
+        while changed:
+            changed = False
+
+            for type_, type_children in children.items():
+                if not needs[type_] and any(
+                    needs[child] if child in needs else self._needs[child]
+                    for child in type_children
+                ):
+                    needs[type_] = True
+                    changed = True
+
+        self._needs.update(needs)
+
+    def build(self, type_: object, /) -> Convert | None:
+        """The converter for *type_*, or ``None`` if its values need no work, so that a response needing nothing goes from the transport to the caller untouched."""
+        with self._lock:
+            return self._build(type_)
+
+    def _build(self, type_: object, /) -> Convert | None:
+        return self._converter(type_) if self._needs_work(type_) else None
+
+    def _converter(self, type_: object, /) -> Convert:
+        if type_ in self._converters:
+            return self._converters[type_]
+
+        # Recursive types reach themselves while being built: they get a forwarding converter, which reads the real one once it exists.
+        cell: list[Convert] = []
+        self._converters[type_] = lambda value: cell[0](value)  # noqa: PLW0108
+        converter = self._compute_build(type_)
+        cell.append(converter)
+        self._converters[type_] = converter
+        return converter
+
+    def _compute_build(self, type_: object, /) -> Convert:
+        inner, metadata = _unwrap(type_)
+        codecs = [item for item in metadata if isinstance(item, Codec)]
+        convert: Convert | None = None
+
+        if codecs:
+            (codec,) = codecs
+            # It annotates this very type, so it converts its values.
+            convert = cast(Convert, codec.decode if self._parses else codec.encode)
+        elif self._needs_work(inner):
+            convert = self._build_structure(inner)
+
+        if NON_NULL in metadata and self._parses:
+            return _non_null_converter(convert)
+
+        assert convert is not None, f"Expected `{type_}` to need work."
+        return convert
+
+    def _build_structure(self, type_: object, /) -> Convert:
+        if (members := _union_members(type_)) is not None:
+            return self._build_union(type_, members)
+
+        if get_origin(type_) in (list, Sequence):
+            (item,) = get_args(type_)
+            return _list_converter(self._converter(item))
+
+        assert is_typeddict(type_), f"Expected `{type_}` to need no work."
+        return self._build_typed_dict(type_)
+
+    def _build_typed_dict(self, type_: object, /) -> Convert:
+        steps = tuple(
+            (key, converter)
+            for key, hint in get_type_hints(type_, include_extras=True).items()
+            if (converter := self._build(hint)) is not None
+        )
+        in_place = self._parses
+
+        def convert(value: object, /) -> object:
+            assert isinstance(value, Mapping)
+            # A response is the client's own, so it is converted in place; variables are the caller's, who may reuse them, so they are copied.
+            result = cast(dict[str, object], value) if in_place else dict(value)
+
+            for key, convert_value in steps:
+                # A key may be absent: an optional input, or a field the server skipped.
+                if key in result:
+                    try:
+                        result[key] = convert_value(result[key])
+                    except UnexpectedNullError as error:
+                        error.path.insert(0, key)
+                        raise
+
+            return result
+
+        return convert
+
+    def _build_union(self, type_: object, members: tuple[object, ...], /) -> Convert:
+        # A sentinel, such as `OMITTED`, is never converted, as `None` is not.
+        non_null = tuple(
+            member
+            for member in members
+            if member is not NoneType and not isinstance(member, SentinelType)
+        )
+        nullable = NoneType in members
+
+        if len(non_null) == 1:
+            convert = self._converter(non_null[0])
+        else:
+            convert = self._build_dispatch(type_, non_null)
+
+        if not nullable:
+            return convert
+
+        partial = self._partial
+
+        def convert_nullable(value: object, /) -> object:
+            try:
+                return None if value is None else convert(value)
+            except UnexpectedNullError:
+                if partial:
+                    return None
+
+                raise
+
+        return convert_nullable
+
+    def _build_dispatch(self, type_: object, members: tuple[object, ...], /) -> Convert:
+        """Tell the members of a union apart, by `__typename` or else by their single key."""
+        typed_dicts = [_unwrap(member)[0] for member in members]
+
+        if not all(is_typeddict(member) for member in typed_dicts):
+            raise TypeError(
+                f"Expected the members of `{type_}` needing work to be TypedDicts."
+            )
+
+        converters = [self._build(member) for member in members]
+        typenames = [_typename_values(member) for member in typed_dicts]
+
+        if all(values is not None for values in typenames):
+            by_typename = {
+                value: converter
+                for values, converter in zip(typenames, converters, strict=True)
+                for value in values or ()
+            }
+
+            def convert_by_typename(value: object, /) -> object:
+                assert isinstance(value, Mapping)
+                # A member added after generation is not converted: nothing is validated.
+                converter = by_typename.get(value["__typename"])
+                return value if converter is None else converter(value)
+
+            return convert_by_typename
+
+        keys = [tuple(get_type_hints(member)) for member in typed_dicts]
+
+        if not all(len(member_keys) == 1 for member_keys in keys) or len(
+            set(keys)
+        ) != len(keys):
+            raise TypeError(f"Cannot tell the members of `{type_}` apart.")
+
+        by_key = {
+            member_key: converter
+            for (member_key,), converter in zip(keys, converters, strict=True)
+        }
+
+        def convert_by_key(value: object, /) -> object:
+            assert isinstance(value, Mapping)
+            (key,) = value
+            # A struct's payload may hold a member added after generation, which is not converted either.
+            converter = by_key.get(key)
+            return value if converter is None else converter(value)
+
+        return convert_by_key
+
+
+def _list_converter(convert_item: Convert, /) -> Convert:
+    def convert(value: object, /) -> object:
+        assert isinstance(value, Sequence)
+        result: list[object] = []
+
+        for index, item in enumerate(value):
+            try:
+                result.append(convert_item(item))
+            except UnexpectedNullError as error:
+                error.path.insert(0, index)
+                raise
+
+        return result
+
+    return convert
+
+
+def _non_null_converter(convert: Convert | None, /) -> Convert:
+    def check(value: object, /) -> object:
+        if value is None:
+            raise UnexpectedNullError([])
+
+        return value if convert is None else convert(value)
+
+    return check
+
+
+_PARSE: Final = _Builder("parse")
+_PARTIAL_PARSE: Final = _Builder("partial parse")
+_SERIALIZE: Final = _Builder("serialize")
+
+
+def build_parser(type_: object, /, *, partial: bool) -> Convert | None:
+    """A *partial* parser is for the data of a response with errors, where a `@nonNull` field is null when it raised: the null propagates to the field's nearest nullable parent, and a :class:`UnexpectedNullError` only escapes when there is none."""
+    return (_PARTIAL_PARSE if partial else _PARSE).build(type_)
+
+
+def build_serializer(type_: object, /) -> Convert | None:
+    return _SERIALIZE.build(type_)
+
+
+def build_injector_serializers(
+    injector_functions_type: object, /
+) -> dict[str, Convert | None]:
+    return {
+        # Each hint is `Callable[[], T]`, whose `T` tells the serializer.
+        name: build_serializer(get_args(_unwrap(hint)[0])[-1])
+        for name, hint in get_type_hints(
+            injector_functions_type, include_extras=True
+        ).items()
+    }

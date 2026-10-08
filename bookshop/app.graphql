@@ -1,0 +1,90 @@
+"A book, with its reviews when asked for."
+query GetBook(
+  "An identifier or an ISBN."
+  $lookup: BookLookup!
+  $withReviews: Boolean! = false
+) {
+  book(lookup: $lookup) @nonNull {
+    ...BookCard
+    isbn
+    pageCount
+    reviews @include(if: $withReviews) {
+      rating
+      text
+      postedAt
+    }
+  }
+}
+
+"What a book shows in a list."
+fragment BookCard on Book {
+  id
+  title
+  price
+  author {
+    name
+  }
+}
+
+query Search($text: String!) {
+  search(text: $text) {
+    ... on Publication {
+      title
+      price
+    }
+    ... on Author {
+      name
+    }
+  }
+}
+
+query ListBooks($filter: BookFilter, $first: Int) {
+  books(filter: $filter, first: $first) {
+    ...BookCard
+    genre
+  }
+}
+
+query GetPublication($id: ID!) {
+  publication(id: $id) {
+    title
+    ... on Printed {
+      pages: pageCount
+      ... on Book {
+        isbn
+      }
+    }
+    ... on Audiobook {
+      duration
+    }
+  }
+}
+
+query GetSavedSearch($name: String!) {
+  savedSearch(name: $name) {
+    value
+  }
+}
+
+mutation PlaceOrder($input: PlaceOrderInput!) {
+  placeOrder(input: $input) {
+    id
+    status
+    total
+    placedAt
+  }
+}
+
+mutation CancelOrder($input: CancelOrderInput!) {
+  cancelOrder(input: $input) {
+    id
+    status
+  }
+}
+
+subscription OnOrderStatusChanged($orderId: ID!) {
+  orderStatusChanged(orderId: $orderId) {
+    id
+    status
+  }
+}
