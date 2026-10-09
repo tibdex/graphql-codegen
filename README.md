@@ -1,6 +1,11 @@
 # graphql-codegen
 
-`graphql-codegen` turns a GraphQL schema and your operations into a typed Python client with:
+[![PyPI](https://img.shields.io/pypi/v/graphql-codegen?style=flat-square)](https://pypi.org/project/graphql-codegen)
+[![Python](https://img.shields.io/pypi/pyversions/graphql-codegen?style=flat-square)](https://pypi.org/project/graphql-codegen)
+[![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen?style=flat-square)](https://github.com/tibdex/graphql-codegen/blob/main/pyproject.toml)
+[![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](https://github.com/tibdex/graphql-codegen/blob/main/LICENSE)
+
+This library turns a GraphQL schema and your operations into a typed Python client with:
 
 - no imposed transport;
 - no validation overhead;
@@ -9,14 +14,18 @@
 ## Installation
 
 ```shell
+pip install graphql-codegen
+```
+
+Or, with `uv`:
+
+```shell
 uv add --dev graphql-codegen
 ```
 
-The generated client depends on nothing but the standard library[^typing-extensions].
-
 ## Quick start
 
-Every example of this README is a file of [`bookshop`](https://github.com/tibdex/graphql-codegen/tree/main/bookshop), whose schema is [`schema.graphqls`](https://github.com/tibdex/graphql-codegen/blob/main/bookshop/schema.graphqls):
+Every example of this README is a file of [`bookshop`](https://github.com/tibdex/graphql-codegen/tree/main/bookshop), which uses [`schema.graphqls`](https://github.com/tibdex/graphql-codegen/blob/main/bookshop/schema.graphqls):
 
 <!-- excerpt: bookshop/schema.graphqls -->
 
@@ -72,15 +81,21 @@ extensions:
     package: bookshop.client
 ```
 
-Generate the client:
+Generate the client[^yaml]:
 
 ```shell
 graphql-codegen bookshop/graphql.config.yml
 ```
 
-The generated package holds only the `enum` and `input` types the operations reach, so that it grows with your documents rather than with the schema.
-Each GraphQL document also gets its own Python module holding its operations (`get_order_graphql.py` here).
-Run them over any transport; your type checker verifies every variable and every field of the response:
+The generated client:
+
+- depends on nothing but the standard library[^typing-extensions];
+- holds only the `enum` and `input` types your operations reach, so that it grows with your documents rather than with the schema.
+
+Each GraphQL document also gets its own Python module holding its operations ([`get_order_graphql.py`](https://github.com/tibdex/graphql-codegen/blob/main/bookshop/get_order_graphql.py) here).
+
+Your type checker verifies every variable and every field of the response.
+The code block below uses [`assert_never()`](https://docs.python.org/3/library/typing.html#typing.assert_never) and [`assert_type()`](https://docs.python.org/3/library/typing.html#typing.assert_type) so you can see what the type checker can prove.
 
 <!-- file: bookshop/quickstart.py -->
 
@@ -96,7 +111,7 @@ client = Client(transport)
 data = client(GetOrder({"id": "o1"}))
 order = data["order"]
 
-# `Query.order`'s type is nullable so the type checker requires this test.
+# `Query.order`'s type is nullable, so the type checker requires this test.
 if order is None:
     print("No such order.")
 else:
@@ -124,30 +139,57 @@ GraphQL is strongly typed, and the server:
 - [responds](https://spec.graphql.org/September2025/#sec-Response) with exactly the operation's shape.
 
 Client-side validation of responses thus mostly adds overhead[^breaking-changes].
-What a Python client lacks is the other half: knowing, while you write `order["status"]`, that the key exists and holds an `OrderStatus`.
+What a Python client still lacks is knowing, while you write `order["status"]`, that the key exists and holds an `OrderStatus`.
 That is a type checker's job, done once, before the code runs.
 
 This library therefore generates exact types for your type checker and leaves each response as decoded from JSON.
 Only [custom scalars](#custom-scalars) with a codec are converted, and only fields asserted [non-null](#non-null-fields) are checked.
 
 > [!NOTE]
-> Most of Python's other GraphQL client generators rely on [Pydantic](https://docs.pydantic.dev) models for both type checking and runtime validation.
+> Most other Python codegen libraries rely on [Pydantic](https://docs.pydantic.dev) models for both type checking and runtime validation.
 > The [TypeScript GraphQL Code Generator](https://the-guild.dev/graphql/codegen), which sets the standard for generating code from GraphQL, does otherwise: it could validate each response with [Zod](https://zod.dev) (Pydantic's TypeScript counterpart) but relies on type checking alone.
 > This library makes the same call.
 
 ### Operation types
 
 Each operation gets a type for its variables and one for its data, both keyed by the names the GraphQL document uses.
-Wherever GraphQL lets a value be one of several things, its Python type is a union that a `match` checks for exhaustiveness:
+Wherever GraphQL lets a value be one of several things, its Python type is a union:
 
 - a selection on a [`union`](https://spec.graphql.org/September2025/#sec-Unions) or an [`interface`](https://spec.graphql.org/September2025/#sec-Interfaces) is one of several types, and becomes one type per concrete type, told apart by [`__typename`](https://spec.graphql.org/September2025/#sec-Type-Name-Introspection) (which the generator selects for you);
-- an [`enum`](https://spec.graphql.org/September2025/#sec-Enums) is one of several values, and becomes a closed `Literal`;
+- an [`enum`](https://spec.graphql.org/September2025/#sec-Enums) is one of several values, and becomes a [`Literal`](https://docs.python.org/3/library/typing.html#typing.Literal);
 - a [`@oneOf` `input`](https://spec.graphql.org/September2025/#sec-OneOf-Input-Objects) is one of several fields, and becomes a union of single-key types, so that a value with two keys fails type checking.
 
-For instance, [`app.graphql`](https://github.com/tibdex/graphql-codegen/blob/main/bookshop/app.graphql) selects a publication's length:
+These unions are closed for the type checker, but nothing enforces them at runtime, since responses are [not validated](#type-checking-not-runtime-validation).
 
-- in pages when it is printed;
-- in minutes when it is an audiobook:
+A server may add a `type` to a `union`, an implementation to an `interface`, a member to an `enum`, or a field to a [struct](#structs)'s `input` type without it being considered a breaking change.
+A validating client would have raised an error before your code even ran, but this library lets the new value reach your code as sent, so you can choose what to do with it.
+
+One way is to accept it in a `case _:` arm:
+
+<!-- excerpt: bookshop/app.py -->
+
+```python
+def status_label(status: OrderStatus, /) -> str:
+    match status:
+        case "PENDING":
+            return "Being prepared"
+        case "SHIPPED":
+            return "On its way"
+        case "DELIVERED":
+            return "Delivered"
+        case "CANCELED":
+            return "Canceled"
+        case _:
+            # A member added after this client was generated.
+            return status.replace("_", " ").capitalize()
+```
+
+The other way is to reject it with `case _ as never: assert_never(never)`, which:
+
+- raises an `AssertionError` at runtime;
+- makes the type checker point at every missing `case` once the client is regenerated.
+
+For instance, [`app.graphql`](https://github.com/tibdex/graphql-codegen/blob/main/bookshop/app.graphql) selects a publication's length, in pages when it is printed and in minutes when it is an audiobook:
 
 <!-- excerpt: bookshop/app.graphql -->
 
@@ -157,9 +199,7 @@ query GetPublication($id: ID!) {
     title
     ... on Printed {
       pages: pageCount
-      ... on Book {
-        isbn
-      }
+      # …
     }
     ... on Audiobook {
       duration
@@ -168,8 +208,10 @@ query GetPublication($id: ID!) {
 }
 ```
 
-Testing for a key narrows it to every `type` selecting that key, even one the server adds later.
-A `match` on `__typename` narrows it to one type:
+`publication` is then a union of one [`TypedDict`](https://docs.python.org/3/library/typing.html#typing.TypedDict) per concrete type: `Audiobook`, and each `type` that `implements Printed`.
+Testing for a key narrows it to the `TypedDict`s with that key, and also covers any new `type` that `implements Printed`.
+
+`length()` then narrows it to one `TypedDict` with a `match` on `__typename`, rejecting any other with `assert_never()`:
 
 <!-- excerpt: bookshop/app.py -->
 
@@ -191,39 +233,11 @@ def length(publication_id: str, /, *, client: Client) -> str:
             assert_never(never)
 ```
 
-> [!NOTE]
-> Not validating responses pays off when a server moves ahead of its clients.
-> A server may add a `type` to a `union`, an implementation to an `interface`, a member to an `enum`, or a field to a [struct](#structs)'s `input` type without it being considered a breaking change.
-> A validating client would raise in production on the new value.
-> Here, the value reaches the code as the server sent it, and the client keeps working.
-
-A `match` handles a value it does not know as you see fit, with a `case _:` arm:
-
-<!-- excerpt: bookshop/app.py -->
-
-```python
-def status_label(status: OrderStatus, /) -> str:
-    match status:
-        case "PENDING":
-            return "Being prepared"
-        case "SHIPPED":
-            return "On its way"
-        case "DELIVERED":
-            return "Delivered"
-        case "CANCELED":
-            return "Canceled"
-        case _:
-            # A member added after this client was generated.
-            return "Unknown"
-```
-
-Or with `case _ as never: assert_never(never)`, as the `match` on `__typename` above does, so that the type checker points at every `match` the addition misses once the client is regenerated.
-
 ### No name clashes
 
-Nothing prevents a schema or a document from using names that clash with Python keywords (`class`), standard library names (`list`, `Literal`), or the generator's own helpers.
+Nothing prevents a schema or a document from using names that clash with Python keywords (`class`, `from`), standard library names the generated code uses (`list`, `Sequence`), or the generator's own helpers.
 
-The names the generator adds itself, such as `_builtins` or `_GetBookData_book`, are spelled around every name a module holds, so no name can shadow another, whatever names the schema and the documents use.
+The names the generator adds, such as `_builtins` or `_GetBookData_book`, avoid every other name in their module, so none can shadow another.
 
 ## Client
 
@@ -254,7 +268,7 @@ from .injection import OMITTED as OMITTED
 from .operation import Operation as Operation, Request as Request
 ```
 
-A transport is a function from a request body to a response body, so any HTTP client, synchronous or asynchronous, works, and so does anything else that carries `bytes`.
+A transport is a function from a request body to a response body, so any HTTP client (synchronous or asynchronous) works, and so does anything else that carries `bytes`.
 `Client`, `AsyncClient`, `SubscriptionClient`, and `AsyncSubscriptionClient` take the same generated operations, so one generation serves both synchronous and asynchronous code.
 Each client forwards every argument but the first (the request) to its transport, type checked against the transport's signature.
 
@@ -323,8 +337,10 @@ def watch(order_id: str, /, *, client: SubscriptionClient) -> list[OrderStatus]:
 
 ### Merging
 
-Merging composes requests at runtime from operations written ahead of time, so every result keeps its exact type.
-A document built at runtime could only be typed loosely.
+Sometimes you only know at runtime which operations to send together, or you want to group the same queries in many combinations, but writing each as its own operation in a `.graphql` file is impractical.
+Combining several operations into one request can also let the server answer faster, seeing the whole picture instead of independent requests asking for overlapping data.
+Some other codegen libraries let you build operations at runtime for this, giving up type safety.
+This library instead merges operations written ahead of time into one request, so that each result keeps its exact type.
 
 A tuple of queries, or of mutations, runs in one call to the transport, each result typed by its own operation:
 
@@ -354,8 +370,8 @@ Its results then share one type, the union of its operations' data types:
 def look_up(
     isbns: Sequence[ISBN], publication_ids: Sequence[str], /, *, client: Client
 ) -> tuple[GetBookData | GetPublicationData, ...]:
-    """Fetch the books, then the publications, in one call to the transport."""
-    return client(  # ty: ignore[unsound-return-statement]
+    # Any number of queries in one call to the transport.
+    return client(  # ty: ignore[unsound-return-statement]  # Pyright and Pyrefly already infer this.
         [
             *(GetBook({"lookup": {"isbn": isbn}}) for isbn in isbns),
             *(GetPublication({"id": id_}) for id_ in publication_ids),
@@ -365,7 +381,7 @@ def look_up(
 
 ### Errors
 
-A response with errors raises an `ExecutionError`:
+A response with errors raises a `RequestError` when the request failed before execution, and an `ExecutionError` when it carries partial data:
 
 <!-- excerpt: bookshop/client/runtime/error.py -->
 
@@ -382,11 +398,11 @@ class ExecutionError(ResponseError, Generic[_Data_co]):
         """Return the data converted as in a response without errors, in a fresh copy.
 ```
 
-When several operations were merged, an `ExceptionGroup` holds one for each operation that failed.
+When several operations are merged, an `ExceptionGroup` holds one for each operation that fails.
 
 You can also have the client return the error instead of raising it, by calling `returning_error()` on the request:
 
-- the result is then typed as either the data or the error, which you tell apart before using it;
+- the result is then typed as either the data or an `ExecutionError`, so you can tell them apart with `isinstance()`;
 - in a [merge](#merging), you choose for each request whether its error is returned or raised;
 - a subscription carries on past an event with errors.
 
@@ -422,7 +438,8 @@ def track(order_id: str, /, *, client: Client) -> str:
 
 ### Custom scalars
 
-[Custom scalars](https://spec.graphql.org/September2025/#sec-Scalars.Custom-Scalars) travel as JSON values of the server's choosing, such as a date as a string:
+[Custom scalars](https://spec.graphql.org/September2025/#sec-Scalars.Custom-Scalars) travel as JSON values in a format decided by the server, such as a date as an ISO 8601 string.
+This library lets you give each one a Python type, with a codec converting its values when they differ from their JSON form:
 
 <!-- excerpt: bookshop/graphql.config.yml -->
 
@@ -430,7 +447,6 @@ def track(order_id: str, /, *, client: Client) -> str:
 extensions:
   pythonCodegen:
     # …
-    # Each custom scalar's Python type, with its codec if any.
     scalars:
       DateTime:
         type: datetime.datetime
@@ -451,20 +467,19 @@ extensions:
           encode: str
 ```
 
+Dotted names in the config resolve as follows:
+
 - a path starting with `..` is relative to the directory holding the package;
 - a bare name, such as `str`, is a builtin;
 - an unconfigured custom scalar is typed `object`.
 
-Where no existing callable fits, write the codec yourself:
+A dotted name must name an attribute of a module, so a method such as `datetime.fromisoformat` needs a function of its own:
 
-<!-- file: bookshop/scalar.py -->
+<!-- excerpt: bookshop/scalar.py -->
 
 ```python
 from datetime import datetime
-from typing import NewType
-
-ISBN = NewType("ISBN", str)
-"""A string on the wire and in Python that a type checker tells apart from others."""
+# …
 
 
 def decode_datetime(value: str, /) -> datetime:
@@ -477,50 +492,30 @@ def encode_datetime(value: datetime, /) -> str:
 
 > [!TIP]
 > If your project already relies on a validation library, it can supply the codec.
-> With Pydantic, for instance, build `adapter = TypeAdapter(Point)` once, then use `decode = adapter.validate_python` and `encode = partial(adapter.dump_python, mode="json")`.
+> For instance, with Pydantic, build `adapter = TypeAdapter(YourType)` once, then use `decode = adapter.validate_python` and `encode = partial(adapter.dump_python, mode="json")`.
 
-Each scalar becomes a type alias, and one with a codec carries it for the client, which converts its values on the way in and out:
-
-<!-- excerpt: bookshop/client/_scalar.py -->
-
-```python
-import builtins as _builtins
-import typing as _typing
-from .runtime import _reflection
-from datetime import datetime as _datetime
-from ..scalar import decode_datetime as _decode_datetime
-from ..scalar import encode_datetime as _encode_datetime
-from ..scalar import ISBN as _ISBN
-from decimal import Decimal as _Decimal
-from uuid import UUID as _UUID
-
-type DateTime = _typing.Annotated[_datetime, _reflection.Codec(decode=_decode_datetime, encode=_encode_datetime)]
-
-type ISBN = _ISBN
-
-type Money = _typing.Annotated[_Decimal, _reflection.Codec(decode=_Decimal, encode=_builtins.str)]
-
-type UUID = _typing.Annotated[_UUID, _reflection.Codec(decode=_UUID, encode=_builtins.str)]
-```
+The client then converts each scalar's values on the way in and out, so your code only ever handles their Python types:
 
 <!-- excerpt: bookshop/app.py -->
 
 ```python
-def order(book_id: str, address: Address, /, *, client: Client) -> str:
-    data = client(
-        PlaceOrder(
-            {"input": {"lines": [{"book": book_id}], "shippingAddress": address}}
-        )
-    )
-    order = data["placeOrder"]
-    assert_type(order["total"], Decimal)
-    assert_type(order["placedAt"], datetime)
-    return f"Order {order['id']}: {order['total']:.2f} at {order['placedAt']:%H:%M}."
+def cheaper_than(limit: Decimal, /, *, client: Client) -> list[str]:
+    data = client(ListBooks({"filter": {"priceBelow": limit}}))
+    labels: list[str] = []
+
+    for book in data["books"]:
+        price = book["price"]
+        assert_type(price, Decimal)
+        labels.append(f"{book['title']}: {price:.2f}")
+
+    return labels
 ```
 
 ### Non-null fields
 
-A directive brings the idea of [Client Controlled Nullability](https://github.com/graphql/graphql-wg/blob/main/rfcs/ClientControlledNullability.md) to any server, since only the generated code is aware of it:
+Schemas often make fields nullable, such as a lookup that may find nothing.
+Yet you may know more than the schema, such as that a lookup will succeed, or want your code to fail fast on a `null` without writing `if value is None: raise …` at every use.
+This library brings the idea of [Client Controlled Nullability](https://github.com/graphql/graphql-wg/blob/main/rfcs/ClientControlledNullability.md) to any server through a client directive:
 
 <!-- excerpt: bookshop/graphql.config.yml -->
 
@@ -528,7 +523,6 @@ A directive brings the idea of [Client Controlled Nullability](https://github.co
 extensions:
   pythonCodegen:
     # …
-    # Client directive asserting a schema-nullable field is not null.
     nonNullDirectiveName: nonNull
 ```
 
@@ -540,27 +534,20 @@ Asserted on `book`, the field's type is then not optional:
 query GetBook(
   "An identifier or an ISBN."
   $lookup: BookLookup!
-  $withReviews: Boolean! = false
+  # …
 ) {
   book(lookup: $lookup) @nonNull {
     ...BookCard
-    isbn
-    pageCount
-    reviews @include(if: $withReviews) {
-      rating
-      text
-      postedAt
-    }
+    # …
   }
 }
-```
 
-<!-- excerpt: bookshop/app_graphql.py -->
-
-```python
-class GetBookData(_compat.TypedDict, closed=True):
-    book: _typing.Annotated[_GetBookData_book, _reflection.NON_NULL]
-    """The book with this identifier or ISBN."""
+fragment BookCard on Book {
+  # …
+  author {
+    name
+  }
+}
 ```
 
 <!-- excerpt: bookshop/app.py -->
@@ -576,11 +563,12 @@ def describe(isbn: ISBN, /, *, client: Client) -> str:
         assert error.__notes__ == [f"Raised by `GetBook` with variables {variables!r}."]
         return "No such book."
 
+    # No `None` check: `@nonNull` took `| None` out of the type.
     book = data["book"]
+
+    # `@nonNull` only covers `book`, so `author` may still be `None`.
     author = book["author"]
     by = "an anthology" if author is None else f"by {author['name']}"
-    assert_type(book["price"], Decimal)
-    return f"{book['title']}, {by}, costs {book['price']:.2f}."
 ```
 
 > [!NOTE]
@@ -589,7 +577,13 @@ def describe(isbn: ISBN, /, *, client: Client) -> str:
 ### Structs
 
 A selection set has a fixed depth, so data of unbounded depth, such as a tree, can only come back as a JSON scalar.
-Following the [Struct RFC](https://github.com/graphql/graphql-wg/blob/main/rfcs/Struct.md), a `Struct` types that scalar with an `input` type, which may be recursive:
+The [Struct RFC](https://github.com/graphql/graphql-wg/blob/main/rfcs/Struct.md) proposes a new `struct` keyword: selected without a selection set, a field of a struct type returns its value whole, like a scalar.
+This library brings that idea to today's servers with a convention, without waiting for the new keyword:
+
+> - each `type` that `implements` a designated `interface` carries that scalar in the interface's single field;
+> - that field's payload is typed by the `input` the `type` is named after, even a recursive one.
+
+For instance:
 
 <!-- excerpt: bookshop/graphql.config.yml -->
 
@@ -597,7 +591,6 @@ Following the [Struct RFC](https://github.com/graphql/graphql-wg/blob/main/rfcs/
 extensions:
   pythonCodegen:
     # …
-    # Interface of object types carrying a JSON payload shaped like an input.
     structInterfaceName: Struct
 ```
 
@@ -619,7 +612,7 @@ type BookFilterStruct implements Struct {
   value: JSON
 }
 
-"The books meeting a condition, or a combination of conditions."
+"A recursive filter on books."
 input BookFilter @oneOf {
   genre: Genre
   author: ID
@@ -630,16 +623,19 @@ input BookFilter @oneOf {
 }
 ```
 
-`BookFilterStruct`'s payload is then typed by `BookFilter` (the `input` type named after the struct minus the interface's name) regardless of its depth:
+One query receives a `BookFilter` as data:
 
-<!-- excerpt: bookshop/app_graphql.py -->
+<!-- excerpt: bookshop/app.graphql -->
 
-```python
-class _GetSavedSearchData_savedSearch(_compat.TypedDict, closed=True):
-    value: _input.BookFilter | None
+```graphql
+query GetSavedSearch($name: String!) {
+  savedSearch(name: $name) {
+    value
+  }
+}
 ```
 
-The same definition can also type what is sent, as `ListBooks` takes a `BookFilter` too:
+Another takes a `BookFilter` as a variable:
 
 <!-- excerpt: bookshop/app.graphql -->
 
@@ -652,6 +648,8 @@ query ListBooks($filter: BookFilter, $first: Int) {
 }
 ```
 
+So the same `BookFilter` goes from one to the other as is:
+
 <!-- excerpt: bookshop/app.py -->
 
 ```python
@@ -662,8 +660,10 @@ def run_saved_search(name: str, /, *, client: Client) -> list[str]:
     if search is None:
         return []
 
+    book_filter = search["value"]
+    assert_type(book_filter, BookFilter | None)
     # Sent back as is.
-    books = client(ListBooks({"filter": search["value"]}))
+    books = client(ListBooks({"filter": book_filter}))
     return [book["title"] for book in books["books"]]
 ```
 
@@ -671,13 +671,17 @@ def run_saved_search(name: str, /, *, client: Client) -> list[str]:
 
 Some input values are `client`'s business rather than each `client()` call's.
 
-Take idempotency keys.
-They make retries safe: if the connection drops after the server placed an order, the transport sends it again, and the key, unique to the order, tells the server it already placed it rather than charging the customer twice.
+For instance, an idempotency key makes retrying a mutation safe:
+
+1. the connection drops after the server placed an order;
+2. the transport sends the order again;
+3. the key, unique to the order, tells the server it already placed it, so it does not charge the customer twice.
+
 GraphQL has no built-in idempotency, so implementing it usually means adding the key as an argument or an input field of each mutation that needs it.
 When many different mutation operations require idempotency, it becomes the concern of all their `client()` calls, each having to get hold of a key.
 This applies to other concepts too, such as database transaction IDs.
 
-An injector handles such a value in one place instead: when `client` is constructed.
+This library handles such a value in one place instead, with an injector given when `client` is constructed.
 The client then passes it to every variable or input field with the name given in the config.
 No variables' type accepts it, so that no `client()` call can pass one by mistake:
 
@@ -687,7 +691,6 @@ No variables' type accepts it, so that no `client()` call can pass one by mistak
 extensions:
   pythonCodegen:
     # …
-    # Values the client injects, which no call can pass.
     injectorNames: [idempotencyKey]
 ```
 
@@ -701,18 +704,11 @@ input PlaceOrderInput {
   idempotencyKey: UUID
 ```
 
-The generated package's `injection` module types the injectors you must supply:
+The generated package's [`injection.py`](https://github.com/tibdex/graphql-codegen/blob/main/bookshop/client/injection.py) module types the injectors you must supply:
 
 <!-- excerpt: bookshop/client/injection.py -->
 
 ```python
-import collections.abc as _abc
-import typing as _typing
-from .runtime import _compat
-from .runtime import injection as _injection
-from .runtime import OMITTED as _OMITTED
-from . import _scalar
-
 class InjectorFunctions(_compat.TypedDict, closed=True):
     """The functions supplying each injected value, by name.
 
@@ -724,19 +720,18 @@ def injectors(functions: InjectorFunctions, /) -> _injection._Injectors:
     return _injection._Injectors(functions, injector_functions_type=InjectorFunctions)
 ```
 
-The client gets its injector once, when built:
+You give the client its injectors once when building it:
 
-<!-- excerpt: bookshop/app.py -->
+<!-- excerpt: bookshop/__main__.py -->
 
 ```python
-if __name__ == "__main__":
-    client = Client(
-        transport,
-        injectors=injectors({"idempotencyKey": uuid4}),
-    )
+client = Client(
+    transport,
+    injectors=injectors({"idempotencyKey": uuid4}),
+)
 ```
 
-And no call passes a key:
+And no call can pass a key:
 
 <!-- excerpt: bookshop/app.py -->
 
@@ -749,7 +744,7 @@ def order(book_id: str, address: Address, /, *, client: Client) -> str:
     )
 ```
 
-The client injects new values on each call, so a retry belongs in the transport, which sends the same body, key included, again:
+The client injects new values on each call, so a retry belongs in your transport, which sends the same body, key included, again:
 
 <!-- excerpt: bookshop/transport.py -->
 
@@ -782,9 +777,10 @@ def transport(body: bytes, /, *, timeout: float | None = None) -> bytes:
 
 ### Colocation
 
-By default, each document's operations and fragments go into a module of the generated package's `document` subpackage, such as `document/get_order.py` for `get_order.graphql`, which the subpackage re-exports (lazily from Python 3.15).
-However, each generated operation is a module-level constant rather than a method of one client class, so it can live anywhere.
-In particular, it can live next to the GraphQL document it comes from, so that a feature's `.graphql` files, their generated modules, and the code calling their operations sit side by side and evolve together:
+Most other codegen libraries gather every operation in one generated module, often inside a single class.
+A feature's operations then live away from its `.graphql` files and the code calling them.
+A project split into several packages cannot have each package own its operations either.
+This library generates each operation as a module-level constant, so it can be colocated with both the document it comes from and the code calling it:
 
 <!-- excerpt: bookshop/graphql.config.yml -->
 
@@ -792,7 +788,6 @@ In particular, it can live next to the GraphQL document it comes from, so that a
 extensions:
   pythonCodegen:
     # …
-    # Name pattern of each document's module, written next to the document.
     documentSiblingModule: "{document}_graphql"
 ```
 
@@ -805,6 +800,10 @@ Code calling these operations imports them from there:
 from bookshop.client.schema import OrderStatus
 from bookshop.get_order_graphql import GetOrder
 ```
+
+> [!NOTE]
+> When the config does not set `documentSiblingModule`, each document's operations and fragments go into a module of the generated package's `document` subpackage instead, such as `document/get_order.py` for `get_order.graphql`.
+> The subpackage re-exports them all, [lazily](https://docs.python.org/3.15/reference/simple_stmts.html#compatibility-via-lazy-modules) from Python 3.15, so that a module is only imported when one of its operations or fragments is used.
 
 ## Python API
 
@@ -837,11 +836,14 @@ from graphql_codegen.package_location import PackageLocation as PackageLocation
 from graphql_codegen.scalar import Codec as Codec, Scalar as Scalar
 ```
 
-[^typing-extensions]: Before Python 3.15, the client also needs [`typing_extensions`](https://typing-extensions.readthedocs.io), for typing features the standard library does not have yet.
+[^typing-extensions]: Before Python 3.15, the client also needs [`typing_extensions`](https://typing-extensions.readthedocs.io), for features the standard library's [`typing`](https://docs.python.org/3/library/typing.html) does not have yet, so add it to your project's own dependencies.
 
 [^bootstrapping]: This library is partly [bootstrapped](https://en.wikipedia.org/wiki/Bootstrapping_(compilers)): to fetch a schema from a URL, [it uses a client](https://github.com/tibdex/graphql-codegen/blob/main/src/graphql_codegen/_cli/_introspection.py) it generated itself from [`_introspection.graphql`](https://github.com/tibdex/graphql-codegen/blob/main/src/graphql_codegen/_cli/_introspection.graphql).
 
-[^breaking-changes]: Only a breaking change made to the schema after generation can contradict the generated types, and most never reach the code: removing or renaming a field, changing its arguments, or turning its type from an object into a leaf or the reverse invalidates the operation, so the server never runs it.
-That leaves a small subset where validation would help, by failing as soon as the response arrives: a field becoming nullable, its leaf type changing, or it switching between a list and a single value.
-Without validation, such a change fails only deeper in your code, if at all.
-GraphQL APIs [avoid such changes](https://graphql.org/learn/schema-design/#versioning) by evolving their schema instead of breaking it, and regenerating against the deployed schema in CI catches the few that slip through.
+[^yaml]: A YAML config, like the quick start's, needs the `yaml` extra: install `graphql-codegen[yaml]` instead.
+JSON and TOML configs need nothing more.
+
+[^breaking-changes]: Well-behaved GraphQL APIs [avoid breaking changes](https://graphql.org/learn/schema-design/#versioning), adding fields and [deprecating](https://spec.graphql.org/September2025/#sec--deprecated) old ones instead.
+Most breaking changes made after generation never reach the code anyway: removing or renaming a field, changing its arguments, or turning its type from an object into a leaf or the reverse invalidates the operation, so the server rejects it, and the `client()` call raises a [`RequestError`](#errors).
+The few left would fail client-side validation as soon as the response arrives, but otherwise propagate deeper in your code, possibly unnoticed: a field becoming nullable, its leaf type changing, or it switching between a list and a single value.
+The more often you regenerate against the deployed schema, the sooner your type checker catches such a change.

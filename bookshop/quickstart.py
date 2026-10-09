@@ -9,7 +9,7 @@ client = Client(transport)
 data = client(GetOrder({"id": "o1"}))
 order = data["order"]
 
-# `Query.order`'s type is nullable so the type checker requires this test.
+# `Query.order`'s type is nullable, so the type checker requires this test.
 if order is None:
     print("No such order.")
 else:

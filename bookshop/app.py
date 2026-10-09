@@ -3,7 +3,6 @@ from contextlib import closing
 from datetime import datetime
 from decimal import Decimal
 from typing import assert_never, assert_type
-from uuid import uuid4
 
 from bookshop.app_graphql import (
     CancelOrder,
@@ -19,12 +18,11 @@ from bookshop.app_graphql import (
     Search,
     SearchData,
 )
-from bookshop.client.injection import injectors
 from bookshop.client.runtime import ExecutionError, UnexpectedNullError
-from bookshop.client.schema import Address, OrderStatus
+from bookshop.client.schema import Address, BookFilter, OrderStatus
 from bookshop.get_order_graphql import GetOrder, GetOrderData
 from bookshop.scalar import ISBN
-from bookshop.transport import Client, SubscriptionClient, transport
+from bookshop.transport import Client, SubscriptionClient
 
 
 def describe(isbn: ISBN, /, *, client: Client) -> str:
@@ -37,9 +35,13 @@ def describe(isbn: ISBN, /, *, client: Client) -> str:
         assert error.__notes__ == [f"Raised by `GetBook` with variables {variables!r}."]
         return "No such book."
 
+    # No `None` check: `@nonNull` took `| None` out of the type.
     book = data["book"]
+
+    # `@nonNull` only covers `book`, so `author` may still be `None`.
     author = book["author"]
     by = "an anthology" if author is None else f"by {author['name']}"
+
     assert_type(book["price"], Decimal)
     return f"{book['title']}, {by}, costs {book['price']:.2f}."
 
@@ -67,8 +69,8 @@ def book_and_similar(
 def look_up(
     isbns: Sequence[ISBN], publication_ids: Sequence[str], /, *, client: Client
 ) -> tuple[GetBookData | GetPublicationData, ...]:
-    """Fetch the books, then the publications, in one call to the transport."""
-    return client(  # ty: ignore[unsound-return-statement]
+    # Any number of queries in one call to the transport.
+    return client(  # ty: ignore[unsound-return-statement]  # Pyright and Pyrefly already infer this.
         [
             *(GetBook({"lookup": {"isbn": isbn}}) for isbn in isbns),
             *(GetPublication({"id": id_}) for id_ in publication_ids),
@@ -83,8 +85,10 @@ def run_saved_search(name: str, /, *, client: Client) -> list[str]:
     if search is None:
         return []
 
+    book_filter = search["value"]
+    assert_type(book_filter, BookFilter | None)
     # Sent back as is.
-    books = client(ListBooks({"filter": search["value"]}))
+    books = client(ListBooks({"filter": book_filter}))
     return [book["title"] for book in books["books"]]
 
 
@@ -117,7 +121,19 @@ def status_label(status: OrderStatus, /) -> str:
             return "Canceled"
         case _:
             # A member added after this client was generated.
-            return "Unknown"
+            return status.replace("_", " ").capitalize()
+
+
+def cheaper_than(limit: Decimal, /, *, client: Client) -> list[str]:
+    data = client(ListBooks({"filter": {"priceBelow": limit}}))
+    labels: list[str] = []
+
+    for book in data["books"]:
+        price = book["price"]
+        assert_type(price, Decimal)
+        labels.append(f"{book['title']}: {price:.2f}")
+
+    return labels
 
 
 def order(book_id: str, address: Address, /, *, client: Client) -> str:
@@ -178,11 +194,3 @@ def watch(order_id: str, /, *, client: SubscriptionClient) -> list[OrderStatus]:
                 break
 
     return statuses
-
-
-if __name__ == "__main__":
-    client = Client(
-        transport,
-        injectors=injectors({"idempotencyKey": uuid4}),
-    )
-    print(describe(ISBN("9780141439518"), client=client))

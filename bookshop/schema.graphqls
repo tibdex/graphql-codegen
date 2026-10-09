@@ -87,7 +87,6 @@ type Magazine implements Publication & Printed {
   title: String!
   price: Money!
   pageCount: Int!
-  issue: Int!
 }
 
 type Audiobook implements Publication {
@@ -96,7 +95,6 @@ type Audiobook implements Publication {
   price: Money!
   "Its length, in minutes."
   duration: Int!
-  narrator: String
 }
 
 type Author {
@@ -169,7 +167,7 @@ input BookLookup @oneOf {
   isbn: ISBN
 }
 
-"The books meeting a condition, or a combination of conditions."
+"A recursive filter on books."
 input BookFilter @oneOf {
   genre: Genre
   author: ID
@@ -205,7 +203,6 @@ input CancelOrderInput {
   "Makes canceling the same order twice harmless."
   idempotencyKey: UUID
   order: ID!
-  reason: String
 }
 
 input RestockInput {
