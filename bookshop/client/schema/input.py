@@ -35,7 +35,7 @@ _BookFilter_or = _compat.TypedDict('_BookFilter_or', {'or': _typing.Required[_ab
 _BookFilter_not = _compat.TypedDict('_BookFilter_not', {'not': _typing.Required[_BookFilter_Ref]}, closed=True)
 
 type BookFilter = _BookFilter_genre | _BookFilter_author | _BookFilter_priceBelow | _BookFilter_and | _BookFilter_or | _BookFilter_not
-"""The books meeting a condition, or a combination of conditions."""
+"""A recursive filter on books."""
 
 class PlaceOrderInput(_compat.TypedDict, closed=True):
     lines: _typing.Required[_abc.Sequence[OrderLineInput]]
@@ -56,4 +56,3 @@ class Address(_compat.TypedDict, closed=True):
 
 class CancelOrderInput(_compat.TypedDict, closed=True):
     order: _typing.Required[_builtins.str]
-    reason: _typing.NotRequired[_builtins.str | None]

@@ -76,8 +76,8 @@ def get_struct_input_name(
 ) -> str | None:
     """The wire type of a struct's payload is an opaque scalar, so without this it would be :class:`object`.
 
-    The payload stays under its `value` key rather than replacing the struct, although a struct only ever has that one key.
-    Moving it up would make every response holding a struct pay for a conversion, even one whose payload otherwise needs none, and the data's type would stop mirroring the document, which selects `value`, all for little convenience.
+    The payload stays under its field's key rather than replacing the struct.
+    Moving it up would make every response holding a struct pay for a conversion, even one whose payload otherwise needs none, and the data's type would stop mirroring the document, which selects that field, all for little convenience.
 
     Once the [Struct RFC](https://github.com/graphql/graphql-wg/blob/main/rfcs/Struct.md) lands, a struct field is selected without a selection set, so the wrapper disappears from the document itself.
     """

@@ -2,6 +2,7 @@ import json
 import runpy
 from asyncio import run as run_async
 from collections.abc import Callable, Mapping
+from decimal import Decimal
 from pathlib import Path
 from typing import Final, cast
 from uuid import UUID
@@ -14,6 +15,7 @@ import bookshop.transport
 from bookshop.app import (
     book_and_similar,
     cancel,
+    cheaper_than,
     describe,
     length,
     look_up,
@@ -263,11 +265,30 @@ def test_telling_a_publication_s_length(publication: object, description: str) -
     ("status", "label"),
     [
         pytest.param("SHIPPED", "On its way", id="a member the client knows"),
-        pytest.param("RETURNED", "Unknown", id="a member added after generation"),
+        pytest.param(
+            "OUT_FOR_DELIVERY",
+            "Out for delivery",
+            id="a member added after generation",
+        ),
     ],
 )
 def test_labeling_an_order_status(status: str, label: str) -> None:
     assert status_label(cast(OrderStatus, status)) == label
+
+
+def test_a_price_goes_out_and_comes_back_through_its_codec() -> None:
+    requests: list[Mapping[str, object]] = []
+
+    def respond(request: Mapping[str, object], /) -> object:
+        requests.append(request)
+        return {"data": {"books": [{**_BOOK, "price": "8.99", "genre": "FICTION"}]}}
+
+    assert cheaper_than(Decimal("10.00"), client=_client(respond)) == [
+        "Persuasion: 8.99"
+    ]
+    assert [request["variables"] for request in requests] == [
+        {"filter": {"priceBelow": "10.00"}}
+    ]
 
 
 def test_an_order_gets_its_idempotency_key_injected() -> None:
