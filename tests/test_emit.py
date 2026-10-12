@@ -24,7 +24,7 @@ from tests._bookshop import BOOKSHOP_DIRECTORY
         ),
         pytest.param(
             "schema/input.py",
-            "lines: _typing.Required[_abc.Sequence[OrderLineInput]]",
+            "lines: _abc.Sequence[OrderLineInput]",
             id="a non-null input field without default is required",
         ),
         pytest.param(
@@ -49,7 +49,7 @@ from tests._bookshop import BOOKSHOP_DIRECTORY
         ),
         pytest.param(
             "schema/input.py",
-            "class _BookLookup_id(_compat.TypedDict, closed=True):\n    id: _typing.Required[_builtins.str]",
+            "class _BookLookup_id(_compat.TypedDict, closed=True):\n    id: _builtins.str",
             id="the key a oneOf member sets is not null",
         ),
         pytest.param(
@@ -59,7 +59,7 @@ from tests._bookshop import BOOKSHOP_DIRECTORY
         ),
         pytest.param(
             "schema/input.py",
-            "_BookFilter_and = _compat.TypedDict('_BookFilter_and', {'and': _typing.Required[_abc.Sequence[_BookFilter_Ref]]}, closed=True)",
+            "_BookFilter_and = _compat.TypedDict('_BookFilter_and', {'and': _abc.Sequence[_BookFilter_Ref]}, closed=True)",
             id="a keyword key is declared functionally, and a recursive reference deferred",
         ),
         pytest.param(
@@ -104,7 +104,7 @@ from tests._bookshop import BOOKSHOP_DIRECTORY
         ),
         pytest.param(
             "../app_graphql.py",
-            'lookup: _typing.Required[_input.BookLookup]\n    """An identifier or an ISBN."""',
+            'lookup: _input.BookLookup\n    """An identifier or an ISBN."""',
             id="a variable's description is its docstring",
         ),
         pytest.param(
@@ -119,12 +119,12 @@ from tests._bookshop import BOOKSHOP_DIRECTORY
         ),
         pytest.param(
             "../app_graphql.py",
-            "_runtime.Operation(operation_type='subscription', name='OnOrderStatusChanged',",
+            "_runtime.Operation(operation_type=_operation_type.SUBSCRIPTION, name='OnOrderStatusChanged',",
             id="a subscription is an operation of its type",
         ),
     ],
 )
-def test_the_bookshop_client_holds(
+def test_the_bookshop_package_holds(
     path: str, snippet: str, bookshop_files: Mapping[PurePosixPath, bytes]
 ) -> None:
     assert snippet in bookshop_files[PurePosixPath(path)].decode()
@@ -138,23 +138,13 @@ def test_the_bookshop_client_holds(
         ),
         pytest.param("schema/enum.py", "Membership", id="an enum no operation reaches"),
         pytest.param(
-            "schema/input.py",
-            "TYPE_CHECKING",
-            id="an import guard, needless since inputs reference each other lazily",
-        ),
-        pytest.param(
-            "schema/enum.py",
-            "%future added value",
-            id="an enum sentinel, needless since nothing validates",
-        ),
-        pytest.param(
             "../app_graphql.py",
             "subscription OnOrderStatusChanged($orderId§",
             id="a merge sigil in a subscription, which cannot be merged",
         ),
     ],
 )
-def test_the_bookshop_client_lacks(
+def test_the_bookshop_package_lacks(
     path: str, snippet: str, bookshop_files: Mapping[PurePosixPath, bytes]
 ) -> None:
     assert snippet not in bookshop_files[PurePosixPath(path)].decode()
@@ -163,7 +153,6 @@ def test_the_bookshop_client_lacks(
 def test_only_a_package_re_exports(
     bookshop_files: Mapping[PurePosixPath, bytes],
 ) -> None:
-    """A module of a package, or next to a document, exports only what it defines: none imports a name as itself, PEP 484's re-export, however its helpers' aliases are settled."""
     for path, content in bookshop_files.items():
         if path.name != "__init__.py" and path.parts[0] != "runtime":
             assert not [
@@ -176,17 +165,16 @@ def test_only_a_package_re_exports(
 def test_typename_is_never_declared_in_a_class_body(
     bookshop_files: Mapping[PurePosixPath, bytes],
 ) -> None:
-    """Python mangles `__typename` in a class body, silently breaking every payload."""
+    # Python would mangle it, silently breaking every payload.
     for path, source in bookshop_files.items():
         for node in ast.walk(ast.parse(source)):
             if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
                 assert node.target.id != "__typename", path
 
 
-def test_a_document_goes_on_the_wire_triple_quoted_without_what_only_the_client_needs(
+def test_a_document_goes_on_the_wire_triple_quoted_without_its_client_directive(
     bookshop_files: Mapping[PurePosixPath, bytes],
 ) -> None:
-    """Descriptions and `@nonNull` leave it, and it reads as GraphQL wherever it sits."""
     source = bookshop_files[PurePosixPath("../app_graphql.py")].decode()
     document = source.split('document="""')[1].split('"""')[0]
 
@@ -349,13 +337,15 @@ def test_a_document_goes_on_the_wire_triple_quoted_without_what_only_the_client_
                 "class _QData_publication_Book(_QData_publication_Book_Base, Pages, closed=True):"
             ],
             [],
-            id="an inline fragment's own selections need none, gathered into the branches the enclosing `__typename` tells apart",
+            id="a fragment selecting `__typename` is still a base, whose key a branch narrows",
         ),
         pytest.param(
             'query Q { publication(id: "1") { __typename ... on Printed { pageCount ... on Book { isbn } } } }',
-            ["class _QData_publication_Book("],
+            [
+                "class _QData_publication_Book(_QData_publication_Book_Base, closed=True):\n    pageCount: _builtins.int\n    isbn: _builtins.object"
+            ],
             [],
-            id="a fragment selecting `__typename` is still a base, whose key a branch narrows",
+            id="a condition nested in another gathers into the members of its type",
         ),
         pytest.param(
             'query Q { order(id: "1") { id } }',
@@ -420,7 +410,7 @@ def test_the_package_needs_nothing_but_the_standard_library(tmp_path: Path) -> N
             # No `site`, and so no site-packages.
             "-S",
             str(Path(__file__).parent / "__resources__" / "import_every_module.py"),
-            "bookshop.client",
+            "bookshop.graphql",
             str(BOOKSHOP_DIRECTORY.parent),
             str(tmp_path),
         ],

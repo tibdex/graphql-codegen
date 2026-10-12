@@ -19,7 +19,6 @@ _BLOCKS: Final = list(_BLOCK.finditer(_README))
     [
         pytest.param(
             block,
-            # A path alone would repeat, since several excerpts may show one file.
             id=f"line {_README.count(chr(10), 0, block.start()) + 1}"
             + (f": {block['path']}" if block["path"] else ""),
         )
@@ -27,12 +26,6 @@ _BLOCKS: Final = list(_BLOCK.finditer(_README))
     ],
 )
 def test_a_code_block_is_a_file_of_the_package(block: re.Match[str]) -> None:
-    """Each block is a file of the package, verbatim, so that the README shows no code that the tests do not run or type check.
-
-    Only a shell command, which nothing runs, may stand on its own; a marker's path is relative to the README, like a link.
-
-    An excerpt keeps the file's text in order, a blank line or a `# …` one standing for what it leaves out.
-    """
     if block["path"] is None:
         assert block["language"] == "shell", (
             "Expected the block to follow a `<!-- file: … -->` or `<!-- excerpt: … -->` marker naming the file it shows."
@@ -49,6 +42,7 @@ def test_a_code_block_is_a_file_of_the_package(block: re.Match[str]) -> None:
 
     position = 0
 
+    # A blank line or a `# …` line stands for what the excerpt leaves out.
     for piece in re.split(r"\n(?: *# …)?\n", block["code"]):
         position = source.find(piece, position)
         assert position != -1, (

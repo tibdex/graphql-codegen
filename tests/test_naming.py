@@ -52,7 +52,7 @@ input _input {
   _compat: _input
 }
 
-# Before `str`, which references it: pyrefly reads a forward reference to a type named like a builtin as the builtin.
+# Before `str`, which references it: pyrefly reads a forward reference named like a builtin as the builtin.
 input input {
   x: Int
 }
@@ -93,7 +93,6 @@ fragment _input on Str { class }
 
 @pytest.fixture(name="files", scope="module")
 def files_fixture() -> Mapping[PurePosixPath, bytes]:
-    """The package of documents built to collide: operations named like helper aliases, builtins, keywords, and `__debug__`, an operation named like another's data type, names differing only by case, and keys named like everything else."""
     return generate(
         document=parse(_DOCUMENT), schema=build_schema(_SCHEMA), config=Config()
     )
@@ -121,9 +120,12 @@ def _bound_names(tree: ast.Module, /) -> list[str]:
                 names.extend(
                     alias.asname or alias.name.split(".")[0]
                     for alias in statement.names
-                    # A star binds its module's names, which GraphQL's one type name space keeps apart from the other's.
+                    # A star import binds names GraphQL's single type namespace already keeps apart.
                     if alias.name != "*"
                 )
+            # An overload binds nothing: its implementation does.
+            case ast.FunctionDef(decorator_list=[ast.Name(id="overload")]):
+                pass
             case ast.ClassDef(name=bound) | ast.FunctionDef(name=bound):
                 names.append(bound)
             case (
@@ -154,7 +156,7 @@ def test_every_module_binds_each_name_once(
     [
         pytest.param(
             "document/GraphQL_request.py",
-            "\n_compat: _runtime.Operation[",
+            "\n_compat: _typing_1.Final = _runtime.Operation(",
             id="an operation named like a helper alias keeps its name",
         ),
         pytest.param(
@@ -164,12 +166,12 @@ def test_every_module_binds_each_name_once(
         ),
         pytest.param(
             "document/GraphQL_request.py",
-            "\nstr: _runtime.Operation[",
+            "\nstr: _typing_1.Final = _runtime.Operation(",
             id="so does one named like a builtin",
         ),
         pytest.param(
             "document/GraphQL_request.py",
-            "\nBookData: _runtime.Operation[",
+            "\nBookData: _typing_1.Final = _runtime.Operation(",
             id="and one named like another's data type",
         ),
         pytest.param(
@@ -179,17 +181,17 @@ def test_every_module_binds_each_name_once(
         ),
         pytest.param(
             "document/GraphQL_request.py",
-            "\nbook: _runtime.Operation[",
+            "\nbook: _typing_1.Final = _runtime.Operation(",
             id="two names differing only by case each keep their own, since a module is not a file",
         ),
         pytest.param(
             "document/GraphQL_request.py",
-            "\nclass_: _runtime.Operation[",
+            "\nclass_: _typing_1.Final = _runtime.Operation(",
             id="a keyword, which cannot be bound, gets PEP 8's trailing underscore",
         ),
         pytest.param(
             "document/GraphQL_request.py",
-            "\n__debug___: _runtime.Operation[",
+            "\n__debug___: _typing_1.Final = _runtime.Operation(",
             id="and so does `__debug__`, the one other name that cannot be",
         ),
         pytest.param(
@@ -213,7 +215,7 @@ def test_the_package_imports_and_every_type_resolves(package_directory: Path) ->
         for path in package_directory.rglob("*.py")
     ]
     operations: set[str] = set()
-    # The package's own copy: the library's classes are not the ones it instantiates.
+    # The package's own runtime: its operations are not instances of the library's classes.
     runtime = importlib.import_module("adversarial.runtime")
     reflection = importlib.import_module("adversarial.runtime._reflection")
 
@@ -222,7 +224,7 @@ def test_the_package_imports_and_every_type_resolves(package_directory: Path) ->
 
         for value in vars(module).values():
             if is_typeddict(value):
-                # Resolves every annotation, which fails if a key shadowed a name it uses.
+                # Fails if a key shadows a name an annotation uses.
                 get_type_hints(value, include_extras=True)
             elif isinstance(value, runtime.Operation):
                 operations.add(value._name)

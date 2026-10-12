@@ -16,17 +16,15 @@ RUNTIME: Final = PendingSpelling("_runtime")
 ENUM: Final = PendingSpelling("_enum")
 INPUT: Final = PendingSpelling("_input")
 INJECTION: Final = PendingSpelling("_injection")
+OPERATION_TYPE: Final = PendingSpelling("_operation_type")
 REFLECTION: Final = PendingSpelling("_reflection")
 SCALAR: Final = PendingSpelling("_scalar")
 OMITTED: Final = PendingSpelling("_OMITTED")
-"""The runtime's sentinel, imported by name: pyright only takes a sentinel as a type when it is spelled as a bare name."""
+"""Imported by name: pyright only takes a sentinel as a type when it is spelled bare."""
 
 
 def nested_type_name(path: Sequence[str], /) -> str:
-    """Private, since the GraphQL way for code to name a shape is a fragment.
-
-    Prefixed by the root, so that a type checker message naming the type also names its operation or fragment.
-    """
+    """Private, since a fragment is the GraphQL way to name a shape, and prefixed by the root, so that a type checker's message names the operation."""
     return f"_{'_'.join(path)}"
 
 
@@ -41,7 +39,7 @@ class OperationSpellings:
 def operation_spellings(
     operations: Sequence[SettledSpelling], /, *, taken: Collection[SettledSpelling]
 ) -> dict[SettledSpelling, OperationSpellings]:
-    """The operations keep theirs, so that a type is suffixed rather than an operation: `Get`'s data type is `GetData_1` in a module also holding an operation `GetData`."""
+    """An operation keeps its name, so that a clash suffixes its type: `Get`'s data type is `GetData_1` beside an operation `GetData`."""
     types = settle_names(
         [
             f"{operation}{suffix}"

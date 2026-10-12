@@ -12,24 +12,24 @@ from graphql_codegen.scalar import Scalar
 @dataclass(frozen=True, kw_only=True)
 class Config:
     document_sibling_module: DocumentSiblingModule | None = None
-    """When ``None``, each document's module is named after the document, in the generated package's `document` subpackage, which re-exports every operation and fragment."""
+    """When `None`, each document's operations and fragments go to a module named after it in the generated package's `document` subpackage, which re-exports them all."""
 
     injector_names: Collection[str] = frozenset()
-    """The names of the variables and input fields an injector supplies, left out of the generated types and injected wherever an operation holds them.
+    """The names of the variables and input fields that injectors supply.
 
-    Every variable and input field of a same name must have the same type, nullability aside.
+    They are left out of the generated types, and must have the same type wherever they appear, nullability aside.
     """
 
     non_null_directive_name: str | None = None
-    """The name of the client directive asserting that a nullable field is not null for this operation, stripped before a document goes on the wire."""
+    """The name of the client directive asserting that a field is not null, stripped from the document before it is sent."""
 
     scalars: Mapping[str, Scalar] = field(default_factory=dict)
-    """The Python type of each scalar by GraphQL name."""
+    """The Python type, and codec, of each scalar by its GraphQL name."""
 
     struct_interface_name: str | None = None
-    """The name of the interface every struct implements: an object type whose single field, of a custom scalar type, carries a JSON payload.
+    """The name of the interface every struct implements: a type whose single field carries a JSON payload.
 
-    The payload is shaped like the input type named as the struct without the interface's name, such as ``"BookFilter"`` for ``f"BookFilter{struct_interface_name}"``.
+    The payload is typed by the input type the struct is named after: `BookFilter` for `BookFilterStruct` when the interface is `Struct`.
     """
 
     def __post_init__(self) -> None:

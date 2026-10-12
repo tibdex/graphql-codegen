@@ -1,15 +1,9 @@
 # Copied into each generated package, where this line says not to edit it.
 
-from .client import (
-    AsyncClient as AsyncClient,
-    AsyncSubscriptionClient as AsyncSubscriptionClient,
-    Client as Client,
-    SubscriptionClient as SubscriptionClient,
-)
 from .error import (
-    ClientError as ClientError,
     Error as Error,
     ExecutionError as ExecutionError,
+    GraphqlError as GraphqlError,
     Location as Location,
     ProtocolError as ProtocolError,
     RequestError as RequestError,
@@ -17,4 +11,6 @@ from .error import (
     UnexpectedNullError as UnexpectedNullError,
 )
 from .injection import OMITTED as OMITTED
-from .operation import Operation as Operation, Request as Request
+from .merge import merge as merge
+from .operation import Operation as Operation
+from .request import PreparedRequest as PreparedRequest, Request as Request

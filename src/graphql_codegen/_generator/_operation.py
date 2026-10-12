@@ -1,5 +1,5 @@
 import ast
-from collections.abc import Collection, Mapping, Sequence, Set as AbstractSet
+from collections.abc import Sequence, Set as AbstractSet
 from dataclasses import replace
 from typing import Final
 
@@ -25,10 +25,11 @@ from graphql_codegen._generator._ast_nodes import (
     documented,
     name,
     qualified,
-    subscript,
 )
+from graphql_codegen._generator._injector import Injections
 from graphql_codegen._generator._naming import (
     BUILTINS,
+    OPERATION_TYPE,
     RUNTIME,
     TYPING,
     OperationSpellings,
@@ -50,12 +51,9 @@ def _undescribed[Node: ExecutableDefinitionNode | VariableDefinitionNode](
 
 
 class _StripForServer(Visitor):
-    """Remove what the server does not need: this library's directives, and descriptions.
+    """Descriptions become docstrings instead of going on the wire, where a server whose parser predates them would reject the request.
 
-    The spec says descriptions must not affect execution, so on the wire they would only cost bytes, and a server whose parser predates them would reject the whole request.
-    They become docstrings instead.
-
-    Block strings are printed as ordinary ones, with the same value, so that no token spans lines, since the runtime slices a merge template at blank lines, and so that a sigil in a string can be escaped, which a block string cannot do.
+    Block strings are printed as ordinary ones, since the runtime slices a merge template at blank lines and escapes a sigil in a string, which a block string cannot.
     """
 
     def __init__(self, directive_names: AbstractSet[str], /) -> None:
@@ -66,7 +64,7 @@ class _StripForServer(Visitor):
         return REMOVE if node.name.value in self._directive_names else None
 
     def enter_string_value(self, node: StringValueNode, *_args: object) -> object:
-        if not node.block:
+        if node.block is not True:
             return None
 
         return replace(node, block=False)
@@ -109,14 +107,13 @@ def emit_variables_type(
     annotations: AnnotationBuilder,
     injector_names: AbstractSet[str],
 ) -> list[ast.stmt]:
-    """A variable is :data:`typing.Required` only when it is non-null *and* has no default, for the same reason as an input field: a default makes it optional for the client, and the document carries the default so Python never needs to."""
+    """A variable with a default is optional, since the document carries the default."""
     keys: list[Key] = []
 
     for definition in operation.variable_definitions or ():
         variable_name = definition.variable.name.value
 
         if variable_name in injector_names:
-            # Injected: the client inserts it, so a caller must not be able to.
             continue
 
         variable_type = type_from_ast(schema, definition.type)
@@ -161,20 +158,15 @@ def emit_operation_constant(
     graphql_name: str,
     spellings: OperationSpellings,
     document: str,
-    injections: Mapping[str, Collection[tuple[str, ...]]],
+    injections: Injections,
 ) -> list[ast.stmt]:
-    """The operation's description is the constant's docstring, since the constant is what callers reach for.
-
-    It is annotated although its type parameters could be inferred from the call: pyrefly widens an inferred `Literal['mutation']` to :class:`str` in a list comprehension passed to the clients' overloads, which then match none.
-    The document is inlined rather than given a constant of its own: a triple quoted literal reads as GraphQL wherever it sits.
-    """
-    # In the order of the class's fields, which is the order things happen in.
     keywords = [
-        ast.keyword(arg="operation_type", value=constant(operation.operation.value)),
-        # The GraphQL name, which is what the server knows the operation by.
+        ast.keyword(
+            arg="operation_type",
+            value=qualified(OPERATION_TYPE, operation.operation.value.upper()),
+        ),
         ast.keyword(arg="name", value=constant(graphql_name)),
         ast.keyword(arg="document", value=constant(document)),
-        # What crosses the wire is read off the variables and data types at runtime: they are the only description of it.
         ast.keyword(arg="variables_type", value=name(spellings.variables)),
     ]
 
@@ -188,13 +180,13 @@ def emit_operation_constant(
                         _frozenset(
                             [
                                 ast.Tuple(
-                                    elts=[constant(part) for part in target],
+                                    elts=[constant(part) for part in path],
                                     ctx=ast.Load(),
                                 )
-                                for target in targets
+                                for path in by_path
                             ],
                         )
-                        for targets in injections.values()
+                        for by_path in injections.values()
                     ],
                 ),
             ),
@@ -202,18 +194,10 @@ def emit_operation_constant(
 
     keywords.append(ast.keyword(arg="data_type", value=name(spellings.data)))
 
-    # Not annotated `Final`: pyright would then reject the package re-exporting it from the module named like it.
     return documented(
         ast.AnnAssign(
             target=ast.Name(id=spellings.operation, ctx=ast.Store()),
-            annotation=subscript(
-                qualified(RUNTIME, "Operation"),
-                subscript(
-                    qualified(TYPING, "Literal"), constant(operation.operation.value)
-                ),
-                name(spellings.variables),
-                name(spellings.data),
-            ),
+            annotation=qualified(TYPING, "Final"),
             value=ast.Call(
                 func=qualified(RUNTIME, "Operation"), args=[], keywords=keywords
             ),

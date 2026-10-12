@@ -1,0 +1,324 @@
+# Copied into each generated package, where this line says not to edit it.
+
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from functools import cache
+from json import dumps
+from typing import Any, Final, Literal, assert_never, cast, final, overload, override
+
+from ._operation_type import OperationType
+from ._sigil import SIGIL
+from .error import ExecutionError, GraphqlError, UnexpectedNullError
+from .injection import _Injectors
+from .operation import (
+    _OperationRequest,
+    _origin_note,
+    _parse_response,
+    _resolve_variables,
+)
+from .request import PreparedRequest, Request
+
+
+@final
+class _MergedRequest[Type: OperationType, Data](Request[Type, Data]):
+    def __init__(self, requests: Sequence[_OperationRequest[Type, object]], /) -> None:
+        if not requests:
+            raise ValueError("Cannot merge no request.")
+
+        super().__init__(operation_type=requests[0]._operation_type)
+        self._requests: Final = tuple(requests)
+
+    @override
+    def __repr__(self) -> str:
+        return f"merge({', '.join(map(repr, self._requests))})"
+
+    @override
+    def prepare(self, *, injectors: _Injectors | None = None) -> PreparedRequest[Data]:
+        # Only `merge()`'s overloads know the tuple's type.
+        return cast(
+            PreparedRequest[Data],
+            _prepare_merged(self._operation_type, self._requests, injectors=injectors),
+        )
+
+
+# Constrained rather than bound, so every merged request has the same type, and none is a subscription.
+# Typed position by position up to 6 requests, as many as typeshed's `asyncio.gather()`: https://github.com/python/typeshed/blob/1ee8b928886a93b060bdafbf1e30dc0bb7c85848/stdlib/asyncio/tasks.pyi#L108-L155
+@overload
+def merge[Type: (Literal["query"], Literal["mutation"]), D1, D2](
+    first: _OperationRequest[Type, D1], second: _OperationRequest[Type, D2], /
+) -> Request[Type, tuple[D1, D2]]: ...
+@overload
+def merge[Type: (Literal["query"], Literal["mutation"]), D1, D2, D3](
+    first: _OperationRequest[Type, D1],
+    second: _OperationRequest[Type, D2],
+    third: _OperationRequest[Type, D3],
+    /,
+) -> Request[Type, tuple[D1, D2, D3]]: ...
+@overload
+def merge[Type: (Literal["query"], Literal["mutation"]), D1, D2, D3, D4](
+    first: _OperationRequest[Type, D1],
+    second: _OperationRequest[Type, D2],
+    third: _OperationRequest[Type, D3],
+    fourth: _OperationRequest[Type, D4],
+    /,
+) -> Request[Type, tuple[D1, D2, D3, D4]]: ...
+@overload
+def merge[Type: (Literal["query"], Literal["mutation"]), D1, D2, D3, D4, D5](
+    first: _OperationRequest[Type, D1],
+    second: _OperationRequest[Type, D2],
+    third: _OperationRequest[Type, D3],
+    fourth: _OperationRequest[Type, D4],
+    fifth: _OperationRequest[Type, D5],
+    /,
+) -> Request[Type, tuple[D1, D2, D3, D4, D5]]: ...
+@overload
+def merge[Type: (Literal["query"], Literal["mutation"]), D1, D2, D3, D4, D5, D6](
+    first: _OperationRequest[Type, D1],
+    second: _OperationRequest[Type, D2],
+    third: _OperationRequest[Type, D3],
+    fourth: _OperationRequest[Type, D4],
+    fifth: _OperationRequest[Type, D5],
+    sixth: _OperationRequest[Type, D6],
+    /,
+) -> Request[Type, tuple[D1, D2, D3, D4, D5, D6]]: ...
+@overload
+def merge[Type: (Literal["query"], Literal["mutation"]), Data](
+    requests: Sequence[_OperationRequest[Type, Data]], /
+) -> Request[Type, tuple[Data, ...]]: ...
+def merge(*args: Any) -> Request[Any, Any]:
+    """Return one request for several queries, or several mutations, whose data is a tuple of their data.
+
+    Positional requests are typed position by position, a sequence by its common data type.
+
+    The errors of a response are split per request: `PreparedRequest.parse()` raises them as an `ExceptionGroup`, unless every failing request is from `returning_error()`, in which case each gets its error in its place.
+    A response with no data raises its error unsplit.
+    """
+    # The sequence overload takes one argument, the others take the requests themselves.
+    requests = args[0] if len(args) == 1 else args
+    return _MergedRequest(requests)
+
+
+def _prepare_merged(
+    operation_type: OperationType,
+    requests: Sequence[_OperationRequest[OperationType, object]],
+    /,
+    *,
+    injectors: _Injectors | None,
+) -> PreparedRequest[tuple[object, ...]]:
+    operations = [request._operation for request in requests]
+    variables = [
+        _resolve_variables(request._operation, request._variables, injectors=injectors)
+        for request in requests
+    ]
+    count = len(requests)
+    # Sent as is when alone, so the server knows it by its own name.
+    body = (
+        operations[0]._request_body(variables[0])
+        if count == 1
+        else _encode_body(
+            operation_type,
+            [
+                _Part(
+                    name=operation._name,
+                    document=operation._document,
+                    variables=operation_variables,
+                )
+                for operation, operation_variables in zip(
+                    operations, variables, strict=True
+                )
+            ],
+        )
+    )
+
+    def parse(raw: bytes, /) -> tuple[object, ...]:
+        failures: dict[int, ExecutionError[object]] = {}
+
+        try:
+            data = _parse_response(raw, partial_data_parser=None)
+        except ExecutionError as error:
+            # With no data, the merge failed as a whole: no request's error to return.
+            if error.data is None:
+                raise
+
+            split = _split_merged_data(error.data, count=count)
+
+            for index, (operation, operation_variables, operation_errors) in enumerate(
+                zip(
+                    operations,
+                    variables,
+                    _split_merged_errors(error.errors, count=count),
+                    strict=True,
+                )
+            ):
+                if operation_errors:
+                    failure = ExecutionError[object](
+                        operation_errors,
+                        data=split[index],
+                        extensions=error.extensions,
+                        partial_data_parser=operation._partial_data_parser,
+                    )
+                    failure.add_note(_origin_note(operation._name, operation_variables))
+                    failures[index] = failure
+
+            # One raising request raises the group of every failure, those of requests returning theirs included.
+            if any(_raises_execution_error(requests[index]) for index in failures):
+                raise ExceptionGroup(
+                    f"{len(failures)} of the {count} merged operations raised.",
+                    list(failures.values()),
+                ) from None
+        else:
+            split = _split_merged_data(data, count=count)
+
+        for index, (operation, operation_variables, operation_data) in enumerate(
+            zip(operations, variables, split, strict=True)
+        ):
+            if index not in failures and operation._data_parser is not None:
+                try:
+                    operation._data_parser(operation_data)
+                except UnexpectedNullError as null_error:
+                    null_error.add_note(
+                        _origin_note(operation._name, operation_variables)
+                    )
+                    raise
+
+        return tuple(
+            failures.get(index, operation_data)
+            for index, operation_data in enumerate(split)
+        )
+
+    return PreparedRequest(body, parse=parse)
+
+
+def _raises_execution_error(
+    request: _OperationRequest[OperationType, object], /
+) -> bool:
+    match request._on_execution_error:
+        case "raise":
+            return True
+        case "return":
+            return False
+        case _ as never:
+            assert_never(never)
+
+
+_MERGED_OPERATION_NAME: Final = "MergedOperation"
+
+_INDEX_SEPARATOR: Final = "_"
+
+
+@final
+@dataclass(frozen=True, kw_only=True)
+class _Part:
+    name: str
+    document: str
+    variables: Mapping[str, object]
+
+
+@cache
+def _template_parts(document: str, /) -> tuple[str, str, Mapping[str, str]]:
+    operation, *fragment_definitions = document.split("\n\n")
+    header, *root_selections, _ = operation.split("\n")
+    # No directives on an operation holding the sigil, so the header ends with its variable definitions.
+    variable_definitions = (
+        header[header.index("(") + 1 : header.rindex(")")] if "(" in header else ""
+    )
+    fragments = {
+        definition.split(" ", 2)[1]: definition for definition in fragment_definitions
+    }
+    return variable_definitions, "\n".join(root_selections), fragments
+
+
+def _encode_body(operation_type: OperationType, parts: Sequence[_Part], /) -> bytes:
+    assert len(parts) > 1
+
+    variable_definitions: list[str] = []
+    selections: list[str] = []
+    fragments: dict[str, str] = {}
+    variables: dict[str, object] = {}
+
+    for index, part in enumerate(parts):
+        if SIGIL not in part.document:
+            raise ValueError(
+                f"Cannot merge `{part.name}`: its document has no `{SIGIL}` where its index would go."
+            )
+
+        definitions, root_selections, operation_fragments = _template_parts(
+            part.document
+        )
+        suffix = f"{_INDEX_SEPARATOR}{index}"
+
+        if definitions:
+            variable_definitions.append(definitions.replace(SIGIL, suffix))
+
+        selections.append(root_selections.replace(SIGIL, suffix))
+        fragments.update(operation_fragments)
+        variables.update(
+            {f"{name}{suffix}": value for name, value in part.variables.items()}
+        )
+
+    signature = f"({', '.join(variable_definitions)})" if variable_definitions else ""
+    document = "\n\n".join(
+        [
+            "\n".join(
+                [
+                    f"{operation_type} {_MERGED_OPERATION_NAME}{signature} {{",
+                    *selections,
+                    "}",
+                ]
+            ),
+            *fragments.values(),
+        ],
+    )
+    return dumps(
+        {
+            "operationName": _MERGED_OPERATION_NAME,
+            "query": document,
+            "variables": variables,
+        },
+    ).encode()
+
+
+def _split_response_name(key: str, /) -> tuple[str, int]:
+    response_name, index = key.rsplit(_INDEX_SEPARATOR, 1)
+    return response_name, int(index)
+
+
+def _split_merged_data(
+    data: Mapping[str, object], /, *, count: int
+) -> Sequence[Mapping[str, object]]:
+    # Preallocated: an operation whose every root field was skipped still gets its own, empty, data.
+    if count == 1:
+        return [data]
+
+    split: list[dict[str, object]] = [{} for _ in range(count)]
+
+    for key, value in data.items():
+        response_name, index = _split_response_name(key)
+        split[index][response_name] = value
+
+    return split
+
+
+def _split_merged_errors(
+    errors: Sequence[GraphqlError], /, *, count: int
+) -> Sequence[Sequence[GraphqlError]]:
+    # An error's path starts with a suffixed root field, which tells its operation; one without a path concerns them all.
+    if count == 1:
+        return [errors]
+
+    split: list[list[GraphqlError]] = [[] for _ in range(count)]
+
+    for error in errors:
+        path = error.get("path") or ()
+
+        if not path or not isinstance(path[0], str):
+            for operation_errors in split:
+                operation_errors.append(error)
+            continue
+
+        response_name, index = _split_response_name(path[0])
+        split[index].append({**error, "path": [response_name, *path[1:]]})
+
+    return split

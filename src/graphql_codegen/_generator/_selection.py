@@ -1,6 +1,6 @@
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Final, cast, final
+from typing import Final, Literal, assert_never, cast, final
 
 from graphql import (
     BooleanValueNode,
@@ -21,14 +21,12 @@ from graphql import (
     type_from_ast,
 )
 
+type Inclusion = Literal["always", "never", "runtime"]
+"""Whether `@skip` and `@include` keep a selection, or leave it to a variable at runtime, which graphql-core's `should_include_node()` cannot tell without values."""
 
-def inclusion(directives: Sequence[DirectiveNode], /) -> bool | None:
-    """Whether `@skip` and `@include` include a selection, or ``None`` when a variable decides.
 
-    graphql-core's :func:`~graphql.execution.collect_fields.should_include_node` needs the variables' values, which only exist at runtime.
-    A directive without its `if` argument, which validation reports, decides nothing either.
-    """
-    included: bool | None = True
+def inclusion(directives: Sequence[DirectiveNode], /) -> Inclusion:
+    result: Inclusion = "always"
 
     for directive in directives:
         name = directive.name.value
@@ -46,11 +44,11 @@ def inclusion(directives: Sequence[DirectiveNode], /) -> bool | None:
         )
 
         if not isinstance(value, BooleanValueNode):
-            included = None
+            result = "runtime"
         elif value.value == (name == GraphQLSkipDirective.name):
-            return False
+            return "never"
 
-    return included
+    return result
 
 
 @final
@@ -81,12 +79,7 @@ class TypeCondition:
 @final
 @dataclass(frozen=True, kw_only=True)
 class SelectionSet:
-    """A selection set, resolved, with the selections under a type condition kept apart.
-
-    ``fields`` holds what is selected on every value, ``conditions`` what is selected only on some, and ``fragment_names`` the fragments spread here.
-    All three are in document order, which keeps emission deterministic.
-    Spreads are recorded rather than expanded, so that emission can reuse the fragment's own type as a base class.
-    """
+    """`fields` is selected on every value, `conditions` only on some, and `fragment_names` are the spreads, kept for base classes."""
 
     type: GraphQLCompositeType
     fields: tuple[SelectedField, ...]
@@ -97,15 +90,7 @@ class SelectionSet:
 
 @final
 class SelectionResolver:
-    """Resolve the type of every field an operation or a fragment selects.
-
-    This is the part a generator inferring types itself easily gets wrong, on `interface` chains notably, and graphql-core supplies all of it, so nothing here infers a type:
-
-    - :class:`~graphql.TypeInfo` tracks, during a recursive descent calling its :meth:`~graphql.TypeInfo.enter` and :meth:`~graphql.TypeInfo.leave`, the definition of each field, meta fields included, and the type each selection set selects on;
-    - :func:`~graphql.is_type_sub_type_of` tells whether a fragment's type condition holds for every value of a type.
-
-    What is left is what graphql-core leaves to its caller: following fragment spreads, and `@skip` and `@include`, whose variables only have values at runtime.
-    """
+    """Nothing here infers a type: graphql-core's `TypeInfo` tracks each field's definition, and `is_type_sub_type_of()` tells whether a type condition holds for every value."""
 
     def __init__(
         self,
@@ -121,7 +106,6 @@ class SelectionResolver:
         self, definition: OperationDefinitionNode | FragmentDefinitionNode, /
     ) -> SelectionSet:
         type_info = TypeInfo(self._schema)
-        # Entering the definition pushes the operation's root type, or the fragment's type condition.
         type_info.enter(definition)
         selection_set = self._resolve_selection_set(
             definition.selection_set, type_info=type_info
@@ -132,7 +116,6 @@ class SelectionResolver:
     def _resolve_selection_set(
         self, node: SelectionSetNode, /, *, type_info: TypeInfo
     ) -> SelectionSet:
-        # Entering it makes the type it selects on the parent type of what it selects.
         type_info.enter(node)
         parent_type = type_info.get_parent_type()
         assert parent_type is not None, (
@@ -143,14 +126,15 @@ class SelectionResolver:
         fragment_names: list[str] = []
 
         for selection in node.selections:
-            # `None` rather than empty when the selection has none.
-            included = inclusion(selection.directives or ())
-
-            # Never in the response, so not in the type either.
-            if included is False:
-                continue
-
-            skippable = included is None
+            match inclusion(selection.directives or ()):
+                case "never":
+                    continue
+                case "always":
+                    skippable = False
+                case "runtime":
+                    skippable = True
+                case _ as never:
+                    assert_never(never)
 
             match selection:
                 case FieldNode():
@@ -161,7 +145,6 @@ class SelectionResolver:
                     )
                 case InlineFragmentNode():
                     type_info.enter(selection)
-                    # Its type condition, or, without one, the enclosing type.
                     selection_set = self._resolve_selection_set(
                         selection.selection_set, type_info=type_info
                     )
@@ -174,7 +157,7 @@ class SelectionResolver:
                         )
                     )
                 case FragmentSpreadNode():
-                    # `TypeInfo` does not follow a spread: the fragment is resolved on its own, by name.
+                    # `TypeInfo` does not follow a spread.
                     fragment_name = selection.name.value
                     fragment_type = cast(
                         "GraphQLCompositeType",
@@ -187,10 +170,10 @@ class SelectionResolver:
                     if not skippable and is_type_sub_type_of(
                         self._schema, parent_type, fragment_type
                     ):
-                        # Its type condition holds for every value selected here, so the fragment's type stands in, as a base class.
+                        # Holds for every value here, so the fragment's type is a base class.
                         fragment_names.append(fragment_name)
                     else:
-                        # One on a narrower type is a branch, as an inline fragment is, and so is a skippable one, since standing in would declare its keys present.
+                        # A narrower or skippable one is a branch, since a base would declare its keys present.
                         conditions.append(
                             TypeCondition(
                                 type=fragment_type,

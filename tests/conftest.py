@@ -8,12 +8,13 @@ from pathlib import Path, PurePosixPath
 import pytest
 from graphql import GraphQLSchema
 
+import bookshop.transport
 from graphql_codegen import generate
 from graphql_codegen._cli._graphql_config import read_graphql_config
 from graphql_codegen.generate import _Params
 from tests._bookshop import BOOKSHOP_DIRECTORY
 from tests._graphql_server import GraphqlHandler, answer_graphql
-from tests._server import serve
+from tests._server import PostHandler, serve
 
 
 @pytest.fixture(name="_bookshop_args", scope="session")
@@ -52,7 +53,7 @@ def assert_type_checks_fixture(
                 str(package.parent),
             ],
             "pyright": ["--pythonpath", sys.executable],
-            # Its default preset for a project without configuration reports none of the mistakes the others catch.
+            # Pyrefly's default preset reports none of the mistakes the other checkers catch.
             "pyrefly": [
                 "check",
                 "--preset",
@@ -77,10 +78,22 @@ def assert_type_checks_fixture(
 
 @pytest.fixture(name="graphql_server")
 def graphql_server_fixture() -> Iterator[Callable[[GraphqlHandler], str]]:
-    """Start a local GraphQL server answering as the given function does, returning its endpoint's URL, until the test ends."""
     with ExitStack() as stack:
         yield (
             lambda graphql_handler: (
                 stack.enter_context(serve(answer_graphql(graphql_handler))) + "/graphql"
             )
         )
+
+
+@pytest.fixture(name="bookshop_server")
+def bookshop_server_fixture(
+    monkeypatch: pytest.MonkeyPatch,
+) -> Iterator[Callable[[PostHandler], None]]:
+    with ExitStack() as stack:
+
+        def start(post_handler: PostHandler, /) -> None:
+            url = stack.enter_context(serve(post_handler))
+            monkeypatch.setattr(bookshop.transport, "BASE_URL", url)
+
+        yield start

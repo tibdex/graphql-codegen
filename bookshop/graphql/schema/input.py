@@ -5,54 +5,54 @@ import builtins as _builtins
 import collections.abc as _abc
 import typing as _typing
 from ..runtime import _compat
-from . import enum as _enum
+from ..schema import enum as _enum
 from .. import _scalar
 
 type _BookFilter_Ref = BookFilter
 
 class _BookLookup_id(_compat.TypedDict, closed=True):
-    id: _typing.Required[_builtins.str]
+    id: _builtins.str
 
 class _BookLookup_isbn(_compat.TypedDict, closed=True):
-    isbn: _typing.Required[_scalar.ISBN]
+    isbn: _scalar.ISBN
 
 type BookLookup = _BookLookup_id | _BookLookup_isbn
 """A book, found by exactly one of its identifiers."""
 
 class _BookFilter_genre(_compat.TypedDict, closed=True):
-    genre: _typing.Required[_enum.Genre]
+    genre: _enum.Genre
 
 class _BookFilter_author(_compat.TypedDict, closed=True):
-    author: _typing.Required[_builtins.str]
+    author: _builtins.str
 
 class _BookFilter_priceBelow(_compat.TypedDict, closed=True):
-    priceBelow: _typing.Required[_scalar.Money]
+    priceBelow: _scalar.Money
 
-_BookFilter_and = _compat.TypedDict('_BookFilter_and', {'and': _typing.Required[_abc.Sequence[_BookFilter_Ref]]}, closed=True)
+_BookFilter_and = _compat.TypedDict('_BookFilter_and', {'and': _abc.Sequence[_BookFilter_Ref]}, closed=True)
 
-_BookFilter_or = _compat.TypedDict('_BookFilter_or', {'or': _typing.Required[_abc.Sequence[_BookFilter_Ref]]}, closed=True)
+_BookFilter_or = _compat.TypedDict('_BookFilter_or', {'or': _abc.Sequence[_BookFilter_Ref]}, closed=True)
 
-_BookFilter_not = _compat.TypedDict('_BookFilter_not', {'not': _typing.Required[_BookFilter_Ref]}, closed=True)
+_BookFilter_not = _compat.TypedDict('_BookFilter_not', {'not': _BookFilter_Ref}, closed=True)
 
 type BookFilter = _BookFilter_genre | _BookFilter_author | _BookFilter_priceBelow | _BookFilter_and | _BookFilter_or | _BookFilter_not
 """A recursive filter on books."""
 
 class PlaceOrderInput(_compat.TypedDict, closed=True):
-    lines: _typing.Required[_abc.Sequence[OrderLineInput]]
-    shippingAddress: _typing.Required[Address]
+    lines: _abc.Sequence[OrderLineInput]
+    shippingAddress: Address
     giftWrap: _typing.NotRequired[_builtins.bool]
     coupons: _typing.NotRequired[_abc.Sequence[_builtins.str]]
     note: _typing.NotRequired[_builtins.str | None]
 
 class OrderLineInput(_compat.TypedDict, closed=True):
-    book: _typing.Required[_builtins.str]
+    book: _builtins.str
     quantity: _typing.NotRequired[_builtins.int]
 
 class Address(_compat.TypedDict, closed=True):
-    street: _typing.Required[_builtins.str]
-    city: _typing.Required[_builtins.str]
-    postalCode: _typing.Required[_builtins.str]
-    country: _typing.Required[_builtins.str]
+    street: _builtins.str
+    city: _builtins.str
+    postalCode: _builtins.str
+    country: _builtins.str
 
 class CancelOrderInput(_compat.TypedDict, closed=True):
-    order: _typing.Required[_builtins.str]
+    order: _builtins.str

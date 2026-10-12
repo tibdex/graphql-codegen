@@ -8,7 +8,7 @@ import pytest
 
 from graphql_codegen.runtime import UnexpectedNullError
 
-# As generated types are: `typing.is_typeddict` once missed `typing_extensions.TypedDict`, silently making a transform a no-op.
+# From `_compat`, as generated types are: `typing.is_typeddict()` once missed `typing_extensions.TypedDict`.
 from graphql_codegen.runtime._compat import ReadOnly, TypedDict
 from graphql_codegen.runtime._reflection import (
     NON_NULL,
@@ -87,8 +87,6 @@ class _Variables(TypedDict, closed=True):
 
 
 class _SavedSearch(TypedDict):
-    """A struct's payload, typed by an input type, comes back in a response."""
-
     filter: _Filter
 
 
@@ -113,17 +111,17 @@ def test_a_type_is_built_by_one_thread_at_a_time(
         parsed.append(convert({"author": None}))
 
     other = Thread(target=parse)
-    compute_build = _Builder._compute_build
+    new_converter = _Builder._new_converter
 
-    def compute_build_while_other_parses(self: _Builder, type_: object, /) -> object:
+    def new_converter_while_other_parses(self: _Builder, type_: object, /) -> object:
         if type_ is _LatestBook:
             other.start()
-            # Long enough for the other thread to parse, were it not waiting for this build.
+            # Long enough for the other thread to finish, were it not waiting on this build.
             other.join(timeout=0.1)
 
-        return compute_build(self, type_)
+        return new_converter(self, type_)
 
-    monkeypatch.setattr(_Builder, "_compute_build", compute_build_while_other_parses)
+    monkeypatch.setattr(_Builder, "_new_converter", new_converter_while_other_parses)
     builder.build(_LatestBook)
     other.join()
 
@@ -208,7 +206,7 @@ _P = _OPENED
             _Search,
             {"search": [{"__typename": "Audiobook", "publishedAt": _W}]},
             {"search": [{"__typename": "Audiobook", "publishedAt": _W}]},
-            id="a member added after generation passes untouched",
+            id="a member added after codegen passes untouched",
         ),
         pytest.param(
             _SavedSearch,

@@ -7,8 +7,6 @@ from tests._server import PostHandler
 
 
 class GraphqlHandler(Protocol):
-    """What a local GraphQL server answers for each request."""
-
     def __call__(self, query: str, /, *, headers: Mapping[str, str]) -> object: ...
 
 

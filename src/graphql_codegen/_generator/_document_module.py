@@ -20,9 +20,9 @@ def document_modules(
     *,
     sibling_module: DocumentSiblingModule | None,
 ) -> dict[PurePosixPath, PurePosixPath]:
-    """A module's name depends on its document alone, so that adding a document never renames another's module, which code imports types from: two documents whose modules would be one file are an error rather than one of them getting a suffix.
+    """A module's name depends on its document alone, so that adding a document never renames another's module.
 
-    It is relative to the package's directory for a module in the package, and in the documents' own terms for a sibling one.
+    Two documents mapping to one file are an error rather than one getting a suffix.
     """
     by_file: dict[tuple[PurePosixPath, str], PurePosixPath] = {}
     modules: dict[PurePosixPath, PurePosixPath] = {}

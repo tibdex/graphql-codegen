@@ -1,6 +1,6 @@
 import json
 from collections.abc import Callable
-from typing import Annotated, Final, Literal
+from typing import Annotated, Any, Final, Literal
 
 import pytest
 
@@ -12,12 +12,6 @@ from graphql_codegen.runtime import (
     RequestError,
 )
 from graphql_codegen.runtime._compat import TypedDict
-from graphql_codegen.runtime._prepare import (
-    parse_data,
-    parse_response,
-    prepare,
-    resolve_variables,
-)
 from graphql_codegen.runtime._reflection import NON_NULL
 from graphql_codegen.runtime.injection import _Injectors
 
@@ -32,12 +26,7 @@ _LIST_BOOKS: Final[
 )
 
 
-def test_the_request_prefix_is_serialized_once() -> None:
-    assert _LIST_BOOKS._request_prefix is _LIST_BOOKS._request_prefix
-
-
 def test_a_repr_names_the_operation_rather_than_dumping_its_document() -> None:
-    """So that a traceback or a debugger shows which operation it is."""
     assert (
         repr(_LIST_BOOKS({}))
         == "Request(operation=Operation(operation_type='query', name='ListBooks'), variables={}, on_execution_error='raise')"
@@ -45,19 +34,18 @@ def test_a_repr_names_the_operation_rather_than_dumping_its_document() -> None:
 
 
 def test_a_request_is_the_spec_s_json_envelope() -> None:
-    assert json.loads(bytes(prepare(_LIST_BOOKS({"first": 2})))) == {
+    assert json.loads(bytes(_LIST_BOOKS({"first": 2}).prepare())) == {
         "operationName": "ListBooks",
         "query": "query ListBooks { books { title } }",
         "variables": {"first": 2},
     }
-    assert json.loads(bytes(prepare(_LIST_BOOKS({}))))["variables"] == {}
+    assert json.loads(bytes(_LIST_BOOKS({}).prepare()))["variables"] == {}
 
 
 def test_a_response_without_data_is_a_request_error() -> None:
     with pytest.raises(RequestError) as error_info:
-        parse_response(
-            b'{"errors": [{"message": "Syntax Error"}], "extensions": {"cost": 1}}',
-            partial_data_parser=None,
+        _LIST_BOOKS({}).prepare().parse(
+            b'{"errors": [{"message": "Syntax Error"}], "extensions": {"cost": 1}}'
         )
 
     assert error_info.value.extensions == {"cost": 1}
@@ -67,9 +55,8 @@ def test_a_response_with_data_and_errors_is_an_execution_error_holding_the_data(
     None
 ):
     with pytest.raises(ExecutionError) as error_info:
-        parse_response(
-            b'{"errors": [{"message": "boom", "path": ["b"]}, {"message": "bang"}], "data": {"a": 1, "b": null}}',
-            partial_data_parser=None,
+        _LIST_BOOKS({}).prepare().parse(
+            b'{"errors": [{"message": "boom", "path": ["b"]}, {"message": "bang"}], "data": {"a": 1, "b": null}}'
         )
 
     assert error_info.value.data == {"a": 1, "b": None}
@@ -94,7 +81,7 @@ def test_what_is_not_a_graphql_response_is_a_protocol_error(
     raw: bytes, message: str
 ) -> None:
     with pytest.raises(ProtocolError, match=message):
-        parse_response(raw, partial_data_parser=None)
+        _LIST_BOOKS({}).prepare().parse(raw)
 
 
 class _GetBook_book(TypedDict):
@@ -117,29 +104,22 @@ _GET_BOOK: Final[Operation[Literal["query"], dict[str, object], _GetBookData]] =
 )
 
 
-@pytest.mark.parametrize(
-    ("data", "path", "expected"),
-    [
-        pytest.param(
-            {"book": {"title": None}, "slogan": "Read on."},
-            ["book", "title"],
-            {"book": None, "slogan": "Read on."},
-            id="to its nearest nullable parent",
-        ),
-    ],
-)
-def test_the_null_of_a_field_asserted_non_null_that_raised_moves_up_in_a_copy(
-    data: dict[str, object], path: list[str], expected: dict[str, object] | None
-) -> None:
+def test_the_null_of_a_field_asserted_non_null_that_raised_moves_up_to_its_nearest_nullable_parent_in_a_copy() -> (
+    None
+):
+    data = {"book": {"title": None}, "slogan": "Read on."}
+
     with pytest.raises(ExecutionError) as error_info:
-        parse_data(
-            _GET_BOOK,
+        _GET_BOOK({}).prepare().parse(
             json.dumps(
-                {"data": data, "errors": [{"message": "boom", "path": path}]}
-            ).encode(),
+                {
+                    "data": data,
+                    "errors": [{"message": "boom", "path": ["book", "title"]}],
+                }
+            ).encode()
         )
 
-    assert error_info.value.parse_data() == expected
+    assert error_info.value.parse_data() == {"book": None, "slogan": "Read on."}
     assert error_info.value.data == data
 
 
@@ -151,6 +131,18 @@ def _idempotency_key(function: Callable[[], str | OMITTED | None], /) -> _Inject
     return _Injectors(
         {"idempotencyKey": function}, injector_functions_type=_IdempotencyKeyInjector
     )
+
+
+def _sent(
+    operation: Operation[Literal["mutation"], dict[str, object], dict[str, object]],
+    variables: dict[str, object],
+    /,
+    *,
+    injectors: _Injectors,
+) -> Any:
+    return json.loads(bytes(operation(variables).prepare(injectors=injectors)))[
+        "variables"
+    ]
 
 
 def _mutation(
@@ -166,8 +158,9 @@ def _mutation(
     )
 
 
-def test_an_injector_is_called_once_and_its_value_written_at_every_path() -> None:
-    """The caller's variables are left as passed, since the caller may reuse them."""
+def test_an_injector_is_called_once_and_written_at_every_path_without_touching_the_caller_s_variables() -> (
+    None
+):
     operation = _mutation(
         "mutation PlaceOrder($input: PlaceOrderInput!) { placeOrder(input: $input) { id } }",
         injections={"idempotencyKey": frozenset({(), ("input",), ("input", "gift")})},
@@ -180,9 +173,7 @@ def test_an_injector_is_called_once_and_its_value_written_at_every_path() -> Non
 
     variables: dict[str, object] = {"input": {"gift": {"message": "Enjoy!"}}}
 
-    assert resolve_variables(
-        operation, variables, injectors=_idempotency_key(idempotency_key)
-    ) == {
+    assert _sent(operation, variables, injectors=_idempotency_key(idempotency_key)) == {
         "input": {
             "gift": {"message": "Enjoy!", "idempotencyKey": "k1"},
             "idempotencyKey": "k1",
@@ -199,34 +190,19 @@ def test_nothing_is_injected_into_an_input_the_caller_left_out() -> None:
         injections={"idempotencyKey": frozenset({("input",)})},
     )
 
-    assert (
-        resolve_variables(operation, {}, injectors=_idempotency_key(lambda: "k")) == {}
-    )
-    assert resolve_variables(
+    assert _sent(operation, {}, injectors=_idempotency_key(lambda: "k")) == {}
+    assert _sent(
         operation, {"input": None}, injectors=_idempotency_key(lambda: "k")
     ) == {"input": None}
 
 
-def test_an_injected_value_is_omitted_sent_null_or_left_out_without_its_injector() -> (
-    None
-):
+def test_an_injected_value_is_omitted_or_sent_null() -> None:
     operation = _mutation(
         "mutation CancelOrder($idempotencyKey: ID) { cancelOrder(idempotencyKey: $idempotencyKey) { id } }",
         injections={"idempotencyKey": frozenset({()})},
     )
 
-    assert (
-        resolve_variables(operation, {}, injectors=_idempotency_key(lambda: OMITTED))
-        == {}
-    )
-    assert resolve_variables(
-        operation, {}, injectors=_idempotency_key(lambda: None)
-    ) == {"idempotencyKey": None}
-    assert (
-        resolve_variables(
-            operation,
-            {},
-            injectors=_Injectors({}, injector_functions_type=_IdempotencyKeyInjector),
-        )
-        == {}
-    )
+    assert _sent(operation, {}, injectors=_idempotency_key(lambda: OMITTED)) == {}
+    assert _sent(operation, {}, injectors=_idempotency_key(lambda: None)) == {
+        "idempotencyKey": None
+    }

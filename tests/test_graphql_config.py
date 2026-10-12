@@ -2,6 +2,7 @@ import json
 import re
 import sys
 from collections.abc import Mapping
+from dataclasses import fields
 from pathlib import Path, PurePosixPath
 from typing import Final
 
@@ -10,23 +11,28 @@ from graphql import Source
 
 from graphql_codegen import Config, PackageLocation
 from graphql_codegen._cli._graphql_config import (
+    _EXTENSION_NAME,
     _get_loader,
     _interpolate,
     _parse_graphql_config,
-    _parse_project,
+    _parse_params,
     _Project,
     read_graphql_config,
 )
 from graphql_codegen._cli._schema_pointer import Globs
 from tests._bookshop import copy_bookshop
 
-_EXTENSION: Final = {"moduleRoot": ".", "package": "client"}
+_EXTENSION: Final = {"moduleRoot": ".", "package": "api"}
 _PROJECT: Final = {
     "schema": "schema.graphqls",
     "documents": "*.graphql",
-    "extensions": {"pythonCodegen": _EXTENSION},
+    "extensions": {_EXTENSION_NAME: _EXTENSION},
 }
-_IN_EXTENSION: Final = "\nIn `extensions.pythonCodegen`.\nIn project `default`."
+_IN_EXTENSION: Final = f"\nIn `extensions.{_EXTENSION_NAME}`.\nIn project `default`."
+
+
+def _camel_case(field_name: str, /) -> str:
+    return re.sub(r"_(\w)", lambda match: match[1].upper(), field_name)
 
 
 @pytest.mark.parametrize(
@@ -35,7 +41,7 @@ _IN_EXTENSION: Final = "\nIn `extensions.pythonCodegen`.\nIn project `default`."
         pytest.param("graphql.config.json", json.dumps(_PROJECT), id="json"),
         pytest.param(
             "graphql.config.toml",
-            'schema = "schema.graphqls"\ndocuments = "*.graphql"\n\n[extensions.pythonCodegen]\nmoduleRoot = "."\npackage = "client"\n',
+            f'schema = "schema.graphqls"\ndocuments = "*.graphql"\n\n[extensions.{_EXTENSION_NAME}]\nmoduleRoot = "."\npackage = "api"\n',
             id="toml",
         ),
         pytest.param(
@@ -46,13 +52,12 @@ _IN_EXTENSION: Final = "\nIn `extensions.pythonCodegen`.\nIn project `default`."
 def test_every_format_python_can_read_is_read(
     name: str, content: str, tmp_path: Path
 ) -> None:
-    """Each project's arguments are keyed by its package's directory, which its module root, relative to the config file's, is re-rooted at."""
     copy_bookshop(tmp_path)
     (tmp_path / name).write_text(content, encoding="utf-8")
 
     (directory,) = read_graphql_config(tmp_path / name)
 
-    assert directory == tmp_path / "client"
+    assert directory == tmp_path / "api"
 
 
 def test_a_yaml_config_without_the_extra_names_it(
@@ -85,11 +90,11 @@ def test_every_project_with_the_extension_is_read() -> None:
     projects = {
         "shop": {
             **_PROJECT,
-            "extensions": {"pythonCodegen": {**_EXTENSION, "package": "shop"}},
+            "extensions": {_EXTENSION_NAME: {**_EXTENSION, "package": "shop"}},
         },
         "back_office": {
             **_PROJECT,
-            "extensions": {"pythonCodegen": {**_EXTENSION, "package": "back_office"}},
+            "extensions": {_EXTENSION_NAME: {**_EXTENSION, "package": "back_office"}},
         },
         # For editors only.
         "server_tests": {"schema": "schema.graphqls", "documents": "*.graphql"},
@@ -103,27 +108,15 @@ def test_every_project_with_the_extension_is_read() -> None:
     } == {"shop", "back_office"}
 
 
-@pytest.mark.parametrize(
-    "extension",
-    [
-        pytest.param(
-            {
-                **_EXTENSION,
-                "documentSiblingModule": None,
-                "injectorNames": None,
-                "nonNullDirectiveName": None,
-                "scalars": None,
-                "structInterfaceName": None,
-            },
-            id="null, like left out",
-        ),
-    ],
-)
-def test_every_config_key_but_where_the_package_goes_is_optional(
-    extension: dict[str, object],
-) -> None:
+def test_every_config_key_but_where_the_package_goes_is_optional() -> None:
+    # Null, like left out.
+    extension = {
+        **_EXTENSION,
+        **{_camel_case(field.name): None for field in fields(Config)},
+    }
+
     ((project),) = _parse_graphql_config(
-        {**_PROJECT, "extensions": {"pythonCodegen": extension}},
+        {**_PROJECT, "extensions": {_EXTENSION_NAME: extension}},
         directory=PurePosixPath(),
     ).values()
 
@@ -138,16 +131,16 @@ def test_every_config_key_but_where_the_package_goes_is_optional(
         ),
         pytest.param(
             {"schema": "schema.graphqls", "documents": "*.graphql"},
-            "Expected a project with a `pythonCodegen` extension.",
+            f"Expected a project with a `{_EXTENSION_NAME}` extension.",
             id="no extension",
         ),
         pytest.param(
             {"projects": dict.fromkeys(("shop", "back_office"), _PROJECT)},
-            "Expected `shop` and `back_office` to generate into directories of their own, but both generate into `client`.",
+            "Expected `shop` and `back_office` to generate into directories of their own, but both generate into `api`.",
             id="two projects into one directory, which would replace each other's",
         ),
         pytest.param(
-            {"documents": "*.graphql", "extensions": {"pythonCodegen": _EXTENSION}},
+            {"documents": "*.graphql", "extensions": {_EXTENSION_NAME: _EXTENSION}},
             "Expected `schema` to be set.\nIn project `default`.",
             id="no schema",
         ),
@@ -169,7 +162,7 @@ def test_a_config_without_a_project_to_generate_fails(
             id="unknown key",
         ),
         pytest.param(
-            {"moduleRoot": 3, "package": "client"},
+            {"moduleRoot": 3, "package": "api"},
             f"Expected a string, but got `3`.\nIn `moduleRoot`.{_IN_EXTENSION}",
             id="a module root that is not a string",
         ),
@@ -189,8 +182,8 @@ def test_a_config_without_a_project_to_generate_fails(
             id="what the config checks, located by notes",
         ),
         pytest.param(
-            {"moduleRoot": ".", "package": "my-client"},
-            f"Expected the package to be a dotted name, such as `my_app._graphql`, but got `my-client`.{_IN_EXTENSION}",
+            {"moduleRoot": ".", "package": "my-api"},
+            f"Expected the package to be a dotted name, such as `my_app._graphql`, but got `my-api`.{_IN_EXTENSION}",
             id="what the package location checks",
         ),
         pytest.param(
@@ -203,7 +196,7 @@ def test_a_config_without_a_project_to_generate_fails(
                     }
                 },
             },
-            f"Expected an absolute dotted name, such as `datetime.datetime`, a dotted name relative to the package's directory, such as `..scalars.decode`, or a builtin, such as `int`, but got `.x`.\nIn `decode`.\nIn `codec`.\nIn `Money`.\nIn `scalars`.{_IN_EXTENSION}",
+            f"Expected a builtin (`str`), an absolute dotted name (`decimal.Decimal`), or a path relative to the generated package's directory (`..scalar.decode_datetime`), but got `.x`.\nIn `decode`.\nIn `codec`.\nIn `Money`.\nIn `scalars`.{_IN_EXTENSION}",
             id="what a scalar checks, located by one note per level",
         ),
         pytest.param(
@@ -228,7 +221,7 @@ def test_a_malformed_extension_is_reported_where_it_is(
 ) -> None:
     with pytest.raises((TypeError, ValueError), match=f"^{re.escape(message)}$"):
         _parse_graphql_config(
-            {**_PROJECT, "extensions": {"pythonCodegen": extension}},
+            {**_PROJECT, "extensions": {_EXTENSION_NAME: extension}},
             directory=PurePosixPath(),
         )
 
@@ -238,14 +231,14 @@ def test_an_invalid_schema_is_reported() -> None:
         name="default",
         schema=Globs(patterns=()),
         documents=[],
-        package_location=PackageLocation(module_root=PurePosixPath(), package="client"),
+        package_location=PackageLocation(module_root=PurePosixPath(), package="api"),
         config=Config(),
     )
 
     with pytest.raises(
         ValueError, match=re.escape("Cannot build the schema: Unknown type 'Missing'.")
     ):
-        _parse_project(
+        _parse_params(
             project,
             schema=[Source("type Query { book: Missing }")],
             documents=[],
@@ -314,7 +307,7 @@ def test_an_invalid_schema_is_reported() -> None:
 def test_an_environment_variable_is_replaced_before_parsing(
     text: str, environment: Mapping[str, str], interpolated: str
 ) -> None:
-    """Including graphql-config's own cases: https://github.com/graphql-hive/graphql-config/blob/3091fcc7259c2feeb9866994a6c3ca4fc6ddb7a0/test/config.spec.ts#L173-L202."""
+    # Includes graphql-config's own cases: https://github.com/graphql-hive/graphql-config/blob/3091fcc7259c2feeb9866994a6c3ca4fc6ddb7a0/test/config.spec.ts#L173-L202
     assert _interpolate(text, environment=environment) == interpolated
 
 

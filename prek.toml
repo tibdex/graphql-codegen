@@ -1,5 +1,5 @@
-# The generated client is compared byte for byte by the golden tests.
-exclude = "^bookshop/client/"
+# The generated package is compared byte for byte by the CLI test.
+exclude = "^bookshop/graphql/"
 
 [[repos]]
 repo = "local"

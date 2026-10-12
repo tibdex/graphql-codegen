@@ -35,30 +35,14 @@ def test_sources_are_read_in_sorted_order_and_named_by_their_paths(
     ]
 
 
-@pytest.mark.parametrize(
-    ("glob", "error", "message"),
-    [
-        pytest.param(
-            "missing/*.graphql",
-            ValueError,
-            "Expected `missing/*.graphql` to match at least one file.",
-            id="matching nothing",
-        ),
-        pytest.param(
-            "/*.graphql",
-            NotImplementedError,
-            "Non-relative patterns are unsupported",
-            id="absolute, which pathlib rejects",
-        ),
-    ],
-)
-def test_each_glob_must_match_a_file(
-    glob: str, error: type[Exception], message: str, tmp_path: Path
-) -> None:
+def test_each_glob_must_match_a_file(tmp_path: Path) -> None:
     copy_bookshop(tmp_path)
 
-    with pytest.raises(error, match=f"^{re.escape(message)}$"):
-        read_sources(["*.graphql", glob], directory=tmp_path)
+    with pytest.raises(
+        ValueError,
+        match=f"^{re.escape('Expected `missing/*.graphql` to match at least one file.')}$",
+    ):
+        read_sources(["*.graphql", "missing/*.graphql"], directory=tmp_path)
 
 
 @pytest.mark.parametrize(

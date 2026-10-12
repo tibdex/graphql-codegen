@@ -43,11 +43,8 @@ from graphql_codegen._generator.spelling import (
 
 
 def _is_required(field: GraphQLInputField, /) -> bool:
-    """In GraphQL a non-null input field with a default is optional for the client: the `!` constrains the value, not whether one must be sent.
-
-    Reading `!` alone would force callers to pass values the server would happily supply.
-    """
-    # graphql-core holds a default given as a Python value in `default_value`, and one given as a GraphQL literal, as SDL gives it, in `default`.
+    """A non-null field with a default is optional, since the server supplies the default."""
+    # graphql-core holds a Python default in `default_value`, and an SDL literal one in `default`.
     return (
         is_non_null_type(field.type)
         and field.default_value is Undefined
@@ -73,13 +70,6 @@ def get_reached_type_names(
     struct_types: StructTypes | None,
     injector_names: AbstractSet[str],
 ) -> frozenset[str]:
-    """Only the enums and input types *document* sends or receives, so that the generated code grows with the documents rather than with the schema.
-
-    An input type is reached through a variable, and reaches the types of its fields in turn, a `@oneOf` input's members included.
-    An enum is reached like an input type, or when a field of its type is selected.
-    The input type of a struct payload is reached when the payload is selected, since the payload has its shape.
-    An injected field reaches nothing, since it is removed from its input type.
-    """
     pending: list[GraphQLNamedType] = []
     type_info = TypeInfo(schema)
 
@@ -139,11 +129,6 @@ def get_reached_type_names(
 def emit_enums(
     schema: GraphQLSchema, /, *, schema_spellings: SchemaSpellings
 ) -> list[ast.stmt]:
-    """Closed, with no `"%future added value"` sentinel and no per-enum openness config, which costs far less here than in a validating generator.
-
-    A validating client turns a member it has not heard of into a hard failure, so a server adding one breaks every older client.
-    Nothing is validated here, so an unknown member reaches the caller as the string the server sent, and the `Literal` is guidance: a `match` may keep a catch-all arm, which really runs, or `assert_never`, which a type checker enforces.
-    """
     return [
         statement
         for enum_type in _reached(
@@ -171,10 +156,7 @@ def _emit_one_of(
     spelling: SettledSpelling,
     bare_names: frozenset[str],
 ) -> list[ast.stmt]:
-    """`closed=True` makes a type checker reject a value with two keys, the only enforcement there is, since nothing is validated at runtime.
-
-    `total=` could never express it: it governs whether *declared* keys are required, never whether *undeclared* ones are allowed.
-    """
+    """`closed=True` is what rejects a value with two keys: `total=` only governs the declared keys."""
     body: list[ast.stmt] = []
     member_spellings: list[PendingSpelling] = []
 
@@ -187,7 +169,7 @@ def _emit_one_of(
                 [
                     Key(
                         name=field_name,
-                        # The spec declares every member nullable but rejects a null one, so the member that is set can never be `None`.
+                        # The spec declares every member nullable but rejects null, so the set member is never `None`.
                         annotation=annotations.build(
                             as_non_null(field.type),
                             position="input",
@@ -224,10 +206,6 @@ def emit_inputs(
     schema_spellings: SchemaSpellings,
     injector_names: AbstractSet[str],
 ) -> list[ast.stmt]:
-    """Input types are not a DAG: the schema has reference cycles, all passing through the nullable members of a `@oneOf` input, which the spec permits since only *non-null* cycles are unsatisfiable.
-
-    One module with postponed annotations lets them name each other freely.
-    """
     input_types = _reached(
         schema, GraphQLInputObjectType, schema_spellings=schema_spellings
     )
@@ -240,7 +218,6 @@ def emit_inputs(
         fields = {
             field_name: field
             for field_name, field in input_type.fields.items()
-            # An injected field is set by the client, so a caller must not be able to.
             if field_name not in injector_names
         }
 
@@ -284,10 +261,7 @@ def emit_inputs(
 def _defer_functional_references(
     body: list[ast.stmt], /, *, input_names: frozenset[SettledSpelling]
 ) -> list[ast.stmt]:
-    """Postponed evaluation only covers annotations: the values of a functional TypedDict are an ordinary dict, evaluated when the statement runs, so an input it names that is defined later, or the type itself, would not exist yet.
-
-    Each such name is referenced through a `type` alias instead, whose value is evaluated lazily.
-    """
+    """A functional TypedDict's values are evaluated when the statement runs, unlike annotations, so an input defined later is referenced through a lazy `type` alias."""
     aliases: dict[SettledSpelling, PendingSpelling] = {}
 
     for statement in body:
@@ -311,11 +285,6 @@ def _defer_functional_references(
 def emit_schema_package(
     schema: GraphQLSchema, /, *, schema_spellings: SchemaSpellings
 ) -> ast.Module:
-    """Re-export every enum and input type of the package, which share GraphQL's single type name space, by a star import of each module.
-
-    It leaves out names starting with an underscore: every helper alias and nested type, and any GraphQL type named that way, which the typing spec keeps private anyway and which its public module still holds.
-
-    """
     exports = {
         schema_spellings.enum_module: _reached(
             schema, GraphQLEnumType, schema_spellings=schema_spellings

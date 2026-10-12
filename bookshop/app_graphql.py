@@ -2,12 +2,13 @@
 
 import builtins as _builtins
 import typing as _typing
-from bookshop.client.runtime import _compat
-from bookshop.client.runtime import _reflection
-from bookshop.client import runtime as _runtime
-from bookshop.client.schema import enum as _enum
-from bookshop.client.schema import input as _input
-from bookshop.client import _scalar
+from bookshop.graphql.runtime import _compat
+from bookshop.graphql.runtime import _operation_type
+from bookshop.graphql.runtime import _reflection
+from bookshop.graphql import runtime as _runtime
+from bookshop.graphql.schema import enum as _enum
+from bookshop.graphql.schema import input as _input
+from bookshop.graphql import _scalar
 
 class _BookCard_author(_compat.TypedDict, closed=True):
     name: _builtins.str
@@ -21,7 +22,7 @@ class BookCard(_compat.TypedDict):
     """Null for an anthology, which has no single author."""
 
 class GetBookVariables(_compat.TypedDict, closed=True):
-    lookup: _typing.Required[_input.BookLookup]
+    lookup: _input.BookLookup
     """An identifier or an ISBN."""
     withReviews: _typing.NotRequired[_builtins.bool]
 
@@ -40,7 +41,7 @@ class GetBookData(_compat.TypedDict, closed=True):
     book: _typing.Annotated[_GetBookData_book, _reflection.NON_NULL]
     """The book with this identifier or ISBN."""
 
-GetBook: _runtime.Operation[_typing.Literal['query'], GetBookVariables, GetBookData] = _runtime.Operation(operation_type='query', name='GetBook', document="""query GetBook($lookup§: BookLookup!, $withReviews§: Boolean! = false) {
+GetBook: _typing.Final = _runtime.Operation(operation_type=_operation_type.QUERY, name='GetBook', document="""query GetBook($lookup§: BookLookup!, $withReviews§: Boolean! = false) {
   book§: book(lookup: $lookup§) {
     ...BookCard
     isbn
@@ -64,7 +65,7 @@ fragment BookCard on Book {
 """A book, with its reviews when asked for."""
 
 class SearchVariables(_compat.TypedDict, closed=True):
-    text: _typing.Required[_builtins.str]
+    text: _builtins.str
 
 _SearchData_search_Book_Base = _compat.TypedDict('_SearchData_search_Book_Base', {'__typename': _compat.ReadOnly[_typing.Literal['Book']]})
 
@@ -95,7 +96,7 @@ class SearchData(_compat.TypedDict, closed=True):
     search: _builtins.list[_SearchData_search]
     """Everything whose title or name contains the text."""
 
-Search: _runtime.Operation[_typing.Literal['query'], SearchVariables, SearchData] = _runtime.Operation(operation_type='query', name='Search', document="""query Search($text§: String!) {
+Search: _typing.Final = _runtime.Operation(operation_type=_operation_type.QUERY, name='Search', document="""query Search($text§: String!) {
   search§: search(text: $text§) {
     __typename
     ... on Publication {
@@ -119,7 +120,7 @@ class ListBooksData(_compat.TypedDict, closed=True):
     books: _builtins.list[_ListBooksData_books]
     """The books matching the filter, at most `first` of them."""
 
-ListBooks: _runtime.Operation[_typing.Literal['query'], ListBooksVariables, ListBooksData] = _runtime.Operation(operation_type='query', name='ListBooks', document="""query ListBooks($filter§: BookFilter, $first§: Int) {
+ListBooks: _typing.Final = _runtime.Operation(operation_type=_operation_type.QUERY, name='ListBooks', document="""query ListBooks($filter§: BookFilter, $first§: Int) {
   books§: books(filter: $filter§, first: $first§) {
     ...BookCard
     genre
@@ -136,7 +137,7 @@ fragment BookCard on Book {
 }""", variables_type=ListBooksVariables, data_type=ListBooksData)
 
 class GetPublicationVariables(_compat.TypedDict, closed=True):
-    id: _typing.Required[_builtins.str]
+    id: _builtins.str
 
 _GetPublicationData_publication_Book_Base = _compat.TypedDict('_GetPublicationData_publication_Book_Base', {'__typename': _compat.ReadOnly[_typing.Literal['Book']]})
 
@@ -165,7 +166,7 @@ class GetPublicationData(_compat.TypedDict, closed=True):
     publication: _GetPublicationData_publication | None
     """The publication with this identifier."""
 
-GetPublication: _runtime.Operation[_typing.Literal['query'], GetPublicationVariables, GetPublicationData] = _runtime.Operation(operation_type='query', name='GetPublication', document="""query GetPublication($id§: ID!) {
+GetPublication: _typing.Final = _runtime.Operation(operation_type=_operation_type.QUERY, name='GetPublication', document="""query GetPublication($id§: ID!) {
   publication§: publication(id: $id§) {
     __typename
     title
@@ -182,7 +183,7 @@ GetPublication: _runtime.Operation[_typing.Literal['query'], GetPublicationVaria
 }""", variables_type=GetPublicationVariables, data_type=GetPublicationData)
 
 class GetSavedSearchVariables(_compat.TypedDict, closed=True):
-    name: _typing.Required[_builtins.str]
+    name: _builtins.str
 
 class _GetSavedSearchData_savedSearch(_compat.TypedDict, closed=True):
     value: _input.BookFilter | None
@@ -191,14 +192,14 @@ class GetSavedSearchData(_compat.TypedDict, closed=True):
     savedSearch: _GetSavedSearchData_savedSearch | None
     """The filter of the saved search with this name, exactly as it was saved."""
 
-GetSavedSearch: _runtime.Operation[_typing.Literal['query'], GetSavedSearchVariables, GetSavedSearchData] = _runtime.Operation(operation_type='query', name='GetSavedSearch', document="""query GetSavedSearch($name§: String!) {
+GetSavedSearch: _typing.Final = _runtime.Operation(operation_type=_operation_type.QUERY, name='GetSavedSearch', document="""query GetSavedSearch($name§: String!) {
   savedSearch§: savedSearch(name: $name§) {
     value
   }
 }""", variables_type=GetSavedSearchVariables, data_type=GetSavedSearchData)
 
 class PlaceOrderVariables(_compat.TypedDict, closed=True):
-    input: _typing.Required[_input.PlaceOrderInput]
+    input: _input.PlaceOrderInput
 
 class _PlaceOrderData_placeOrder(_compat.TypedDict, closed=True):
     id: _builtins.str
@@ -210,7 +211,7 @@ class PlaceOrderData(_compat.TypedDict, closed=True):
     placeOrder: _PlaceOrderData_placeOrder
     """Place an order for the given lines."""
 
-PlaceOrder: _runtime.Operation[_typing.Literal['mutation'], PlaceOrderVariables, PlaceOrderData] = _runtime.Operation(operation_type='mutation', name='PlaceOrder', document="""mutation PlaceOrder($input§: PlaceOrderInput!) {
+PlaceOrder: _typing.Final = _runtime.Operation(operation_type=_operation_type.MUTATION, name='PlaceOrder', document="""mutation PlaceOrder($input§: PlaceOrderInput!) {
   placeOrder§: placeOrder(input: $input§) {
     id
     status
@@ -220,7 +221,7 @@ PlaceOrder: _runtime.Operation[_typing.Literal['mutation'], PlaceOrderVariables,
 }""", variables_type=PlaceOrderVariables, injections={'idempotencyKey': _builtins.frozenset({('input',)})}, data_type=PlaceOrderData)
 
 class CancelOrderVariables(_compat.TypedDict, closed=True):
-    input: _typing.Required[_input.CancelOrderInput]
+    input: _input.CancelOrderInput
 
 class _CancelOrderData_cancelOrder(_compat.TypedDict, closed=True):
     id: _builtins.str
@@ -233,7 +234,7 @@ class CancelOrderData(_compat.TypedDict, closed=True):
     Null, with an error saying why, for an order that has.
     Nullable so that when several orders are canceled in one request, one failure leaves the others' results intact."""
 
-CancelOrder: _runtime.Operation[_typing.Literal['mutation'], CancelOrderVariables, CancelOrderData] = _runtime.Operation(operation_type='mutation', name='CancelOrder', document="""mutation CancelOrder($input§: CancelOrderInput!) {
+CancelOrder: _typing.Final = _runtime.Operation(operation_type=_operation_type.MUTATION, name='CancelOrder', document="""mutation CancelOrder($input§: CancelOrderInput!) {
   cancelOrder§: cancelOrder(input: $input§) {
     id
     status
@@ -241,7 +242,7 @@ CancelOrder: _runtime.Operation[_typing.Literal['mutation'], CancelOrderVariable
 }""", variables_type=CancelOrderVariables, injections={'idempotencyKey': _builtins.frozenset({('input',)})}, data_type=CancelOrderData)
 
 class OnOrderStatusChangedVariables(_compat.TypedDict, closed=True):
-    orderId: _typing.Required[_builtins.str]
+    orderId: _builtins.str
 
 class _OnOrderStatusChangedData_orderStatusChanged(_compat.TypedDict, closed=True):
     id: _builtins.str
@@ -251,7 +252,7 @@ class OnOrderStatusChangedData(_compat.TypedDict, closed=True):
     orderStatusChanged: _OnOrderStatusChangedData_orderStatusChanged
     """The order, each time its status changes."""
 
-OnOrderStatusChanged: _runtime.Operation[_typing.Literal['subscription'], OnOrderStatusChangedVariables, OnOrderStatusChangedData] = _runtime.Operation(operation_type='subscription', name='OnOrderStatusChanged', document="""subscription OnOrderStatusChanged($orderId: ID!) {
+OnOrderStatusChanged: _typing.Final = _runtime.Operation(operation_type=_operation_type.SUBSCRIPTION, name='OnOrderStatusChanged', document="""subscription OnOrderStatusChanged($orderId: ID!) {
   orderStatusChanged(orderId: $orderId) {
     id
     status

@@ -23,7 +23,7 @@ from graphql import (
 from graphql_codegen._generator._document import get_transitively_spread_fragments
 from graphql_codegen.runtime._sigil import SIGIL
 
-# No printed name can hold it, and a string escapes it, so it only ever stands for a sigil.
+# NUL: no printed name holds it, and `print_ast()` escapes it in strings.
 _PLACEHOLDER: Final = "\x00"
 _ESCAPED_SIGIL: Final = "\\u" + f"{ord(SIGIL):04x}"
 
@@ -53,16 +53,10 @@ class _SuffixVariables(Visitor):
 
 
 def print_merge_template(document: DocumentNode, /) -> str:
-    """Print *document*, holding one operation and the fragments it uses as the server receives them, with the sigil wherever its index in a merge goes, so that merging at runtime is string replacement.
+    """A subscription selects one root field, and an operation with directives would apply them to the whole merge: neither gets a sigil.
 
-    After the response name of each root field, as its alias, and after the name of each variable, in its definition and wherever it is used.
-    The sigil is written as a character no printed name or string can hold, then swapped in once a literal sigil in a string has been escaped, so that every sigil left is one.
-    A subscription, which selects a single root field, and an operation with directives of its own, which would apply to the whole merge, cannot be merged: they get no sigil.
-
-    Two things cannot keep their shape in a merge, and are inlined as inline fragments, which the server executes the same:
-
-    - a fragment spread at the root, since the fields it selects are root fields and need aliasing;
-    - a fragment using variables, since each operation of a merge suffixes its variables differently, while a fragment is defined once for all of them.
+    A fragment spread at the root is inlined, since its fields are root fields and need aliasing.
+    So is a fragment using variables, since each operation of a merge suffixes its variables differently.
     """
     (operation,) = (
         definition
@@ -70,7 +64,7 @@ def print_merge_template(document: DocumentNode, /) -> str:
         if isinstance(definition, OperationDefinitionNode)
     )
 
-    if operation.operation is OperationType.SUBSCRIPTION or operation.directives:
+    if operation.operation is OperationType.SUBSCRIPTION or bool(operation.directives):
         return print_ast(document).replace(SIGIL, _ESCAPED_SIGIL)
 
     fragments = {

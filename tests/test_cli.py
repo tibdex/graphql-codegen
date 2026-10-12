@@ -12,21 +12,20 @@ from tests._bookshop import BOOKSHOP_DIRECTORY
     "command",
     [
         pytest.param([sys.executable, "-m", "graphql_codegen"], id="python -m"),
-        # Next to the interpreter, as `uv run` finds it: the script `pyproject.toml` declares.
+        # The script `pyproject.toml` declares, next to the interpreter as `uv run` finds it.
         pytest.param(
             [shutil.which("graphql-codegen", path=Path(sys.executable).parent)],
             id="script",
         ),
     ],
 )
-def test_the_cli_generates_the_committed_bookshop_client(
+def test_the_cli_generates_the_committed_bookshop_package(
     command: list[str], tmp_path: Path
 ) -> None:
-    # What its config generates: the package and the modules next to its documents.
-    generated = ("client", "*_graphql.py")
+    generated = ("graphql", "*_graphql.py")
 
     for pattern in generated:
-        # Matching nothing, a pattern would let the copy hold what the command must write.
+        # Guards the test: a pattern matching nothing would leave the copy holding what the command must write.
         assert any(BOOKSHOP_DIRECTORY.glob(pattern)), pattern
 
     directory = tmp_path / "bookshop"
