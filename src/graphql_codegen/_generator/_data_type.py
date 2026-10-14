@@ -53,7 +53,7 @@ class _DeclaredKey:
     declaring_fragment: str
 
 
-def _merge_selection_sets(
+def _join_selection_sets(
     selection_sets: Sequence[SelectionSet], /, *, type_: GraphQLCompositeType
 ) -> SelectionSet:
     return SelectionSet(
@@ -84,20 +84,19 @@ def _merge_selection_sets(
     )
 
 
-def _merge_fields(fields: Sequence[SelectedField], /) -> tuple[SelectedField, ...]:
-    """Validation guarantees that fields sharing a response name are the same field with the same arguments, so only their selection sets and client directives need combining."""
+def _collect_fields(fields: Sequence[SelectedField], /) -> tuple[SelectedField, ...]:
     by_response_name: dict[str, list[SelectedField]] = {}
 
     for field in fields:
         by_response_name.setdefault(field.response_name, []).append(field)
 
     return tuple(
-        group[0] if len(group) == 1 else _merge_field_group(group)
+        group[0] if len(group) == 1 else _collect_field_group(group)
         for group in by_response_name.values()
     )
 
 
-def _merge_field_group(group: Sequence[SelectedField], /) -> SelectedField:
+def _collect_field_group(group: Sequence[SelectedField], /) -> SelectedField:
     # Validation guarantees that the fields are all leaves or all select on the same type.
     selection_sets = [
         field.selection_set for field in group if field.selection_set is not None
@@ -105,9 +104,7 @@ def _merge_field_group(group: Sequence[SelectedField], /) -> SelectedField:
     return replace(
         group[0],
         directive_names=frozenset().union(*(field.directive_names for field in group)),
-        selection_set=_merge_selection_sets(
-            selection_sets, type_=selection_sets[0].type
-        )
+        selection_set=_join_selection_sets(selection_sets, type_=selection_sets[0].type)
         if selection_sets
         else None,
         # Present as soon as one of the fields is.
@@ -117,12 +114,10 @@ def _merge_field_group(group: Sequence[SelectedField], /) -> SelectedField:
 
 @final
 class DataTypeEmitter:
-    """Turn resolved selection sets into TypedDicts, in class syntax, so that a fragment spread can be a base class.
+    """A fragment spread becomes a base class, so that adding a field next to it changes a class body, never a name.
 
-    Inheritance is what keeps a type name stable: adding a field next to a spread changes the class body, never the name.
-    A fragment's own class is open, since an operation spreading it extends it, and every other type is closed, since a response holds exactly the keys its operation selects.
-    Types are emitted depth first, children before parents, so a name is always defined before it is used as a base class.
-    One emitter serves a whole package, so that each fragment is normalized once, whichever modules spread it.
+    A fragment's class is open, since an operation spreading it extends it, and every other type is closed.
+    One emitter serves a whole package, so that each fragment is normalized once.
     """
 
     def __init__(
@@ -141,7 +136,6 @@ class DataTypeEmitter:
         self._resolve_fragment: Final = resolve_fragment
         self._struct_types: Final = struct_types
         self._non_null_directive_name: Final = non_null_directive_name
-        # Cached for the emitter's life: one serves a whole package.
         self._normalized_fragment: Final = cache(self._normalize_fragment)
         self._declared_keys: Final = cache(self._find_declared_keys)
 
@@ -154,7 +148,6 @@ class DataTypeEmitter:
         fragment_reference: Callable[[str], ast.expr],
         inheritable: bool,
     ) -> list[ast.stmt]:
-        """The outermost type is public and every nested one private, its spelling pending, so that a path spelled like another gets a suffix rather than clashing."""
         return self._emit_node(
             selection_set,
             spelling=root_spelling,
@@ -173,7 +166,6 @@ class DataTypeEmitter:
         fragment_reference: Callable[[str], ast.expr],
         inheritable: bool,
     ) -> list[ast.stmt]:
-        """A class's keys are required, since GraphQL guarantees that a selected field is present in the response, unless `@skip` or `@include` may leave it out, nullability living in the annotation."""
         return self._emit_normalized(
             self._normalize(selection_set),
             spelling=spelling,
@@ -256,10 +248,7 @@ class DataTypeEmitter:
         path: Sequence[str],
         fragment_reference: Callable[[str], ast.expr],
     ) -> list[ast.stmt]:
-        """Emit *selection_set*, which has conditions, as a union with one member per concrete type, discriminated by `__typename`, which the document selects on every abstract type.
-
-        Each member gathers the fields of every condition its type satisfies, so conditions nested in conditions need no case of their own.
-        """
+        """One member per concrete type, each gathering the fields of every condition its type satisfies, so that nested conditions need no case of their own."""
         statements: list[ast.stmt] = []
         members: list[PendingSpelling] = []
 
@@ -299,10 +288,10 @@ class DataTypeEmitter:
                     else branch
                 )
 
-        merged = _merge_selection_sets(
+        joined = _join_selection_sets(
             [replace(part, conditions=()) for part in gathered], type_=object_type
         )
-        return replace(merged, description=object_type.description or "")
+        return replace(joined, description=object_type.description or "")
 
     def _as_skippable(
         self, selection_set: SelectionSet, /, *, object_type: GraphQLObjectType
@@ -319,10 +308,7 @@ class DataTypeEmitter:
         return replace(selection_set, fields=tuple(fields), fragment_names=())
 
     def _normalize(self, selection_set: SelectionSet, /) -> SelectionSet:
-        """Merge fields by key, and expand every spread that cannot soundly be inherited, which is always correct, merely less reused.
-
-        A fragment can soundly be inherited when its own type is a class rather than a union, and every key it shares with the rest of the node is the very same one, declared by the same fragment or as the same leaf.
-        """
+        """A spread is inherited when its fragment is a class and every key it shares with the node is the same one, and expanded otherwise, which is always correct, only less reused."""
         fields = list(selection_set.fields)
         conditions: list[TypeCondition] = list(selection_set.conditions)
         bases: list[str] = []
@@ -349,14 +335,14 @@ class DataTypeEmitter:
                 else:
                     bases.append(fragment_name)
 
-            merged = _merge_fields(fields)
+            collected = _collect_fields(fields)
             conflicting = next(
                 (
                     base
                     for base in bases
-                    if self._declares_a_key_otherwise(
+                    if self._conflicts(
                         base,
-                        fields=merged,
+                        fields=collected,
                         other_bases=[other for other in bases if other != base],
                     )
                 ),
@@ -366,7 +352,7 @@ class DataTypeEmitter:
             if conflicting is None:
                 return replace(
                     selection_set,
-                    fields=merged,
+                    fields=collected,
                     conditions=tuple(conditions),
                     fragment_names=tuple(bases),
                 )
@@ -391,7 +377,7 @@ class DataTypeEmitter:
 
         return declared
 
-    def _declares_a_key_otherwise(
+    def _conflicts(
         self,
         base: str,
         /,
@@ -418,7 +404,6 @@ class DataTypeEmitter:
         return False
 
     def _same_leaf(self, field: SelectedField, other: SelectedField, /) -> bool:
-        """Whether two fields get the very same annotation, which only leaves can."""
         return (
             field.selection_set is None
             and other.selection_set is None
@@ -453,7 +438,6 @@ class DataTypeEmitter:
         fragment_reference: Callable[[str], ast.expr],
     ) -> tuple[list[ast.stmt], ast.expr]:
         non_null = self._is_non_null(field)
-        # `@nonNull` is the caller asserting that this query cannot return null here, so the annotation loses its `| None`, and `NON_NULL` tells the runtime to enforce it.
         field_type = as_non_null(field.type) if non_null else field.type
         statements: list[ast.stmt] = []
         struct_input_name = self._struct_input_name(field)
@@ -522,7 +506,7 @@ class DataTypeEmitter:
 
 
 def _typename_annotation(possible_types: Sequence[GraphQLObjectType], /) -> ast.expr:
-    # Read-only, which is what lets a subclass narrow the `__typename` of a fragment it inherits: a mutable key cannot change type in a subclass.
+    # Read-only, so that a subclass may narrow the `__typename` it inherits from a fragment.
     return subscript(
         qualified(COMPAT, "ReadOnly"),
         subscript(

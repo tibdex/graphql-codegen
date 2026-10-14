@@ -30,19 +30,19 @@ from .error import UnexpectedNullError
 type Mode = Literal["parse", "partial parse", "serialize"]
 """What a builder's converters do.
 
-- ``"parse"`` converts the data of a response in place, and raises on the null of a `@nonNull` field.
-- ``"partial parse"`` converts the data of a response with errors in place, propagating the null of a `@nonNull` field to its nearest nullable parent, as the server propagates that of a non-null field which raised.
-- ``"serialize"`` copies variables, converting what they hold to what goes on the wire.
+- `"parse"` converts the data of a response in place, and raises on the null of a `@nonNull` field.
+- `"partial parse"` does the same for a response with errors, but moves the null of a `@nonNull` field up to its nearest nullable parent, as the server does for a non-null field.
+- `"serialize"` converts a copy of the variables to what goes on the wire.
 """
 
 type Convert = Callable[[object], object]
-"""A parser may convert a mapping in place, a serializer never does."""
+"""A parser converts in place, a serializer copies: a response is ours, the variables are the caller's."""
 
 _QUALIFIERS: Final = frozenset({NotRequired, ReadOnly, Required})
 
 
 NON_NULL: Final = SentinelType("NON_NULL")
-"""Marks a `@nonNull` field, whose null is legal for the schema but not for the query: null there raises :class:`UnexpectedNullError` instead of passing."""
+"""Marks a `@nonNull` field, whose null raises `UnexpectedNullError`."""
 
 
 @final
@@ -53,7 +53,6 @@ class Codec[Value, Wire]:
 
 
 def _unwrap(type_: object, /) -> tuple[object, tuple[object, ...]]:
-    """Split *type_* from its :data:`typing.Annotated` metadata, which says what a plain type cannot, such as :data:`NON_NULL` or a :class:`Codec`, and which type checkers ignore."""
     metadata: list[object] = []
 
     while True:
@@ -101,10 +100,9 @@ def _children(unwrapped_type: object, /) -> tuple[object, ...]:
 
 @final
 class _Builder:
-    """Builds converters for one mode, caching them, so that the work is paid once per type rather than once per call, and tying the knot on recursive types.
+    """Builds the converters of one mode, once per type.
 
-    The build recurses over the grammar of types (:class:`typing.TypedDict`, lists, `X | None`, type aliases, and unions told apart by `__typename` or, for `@oneOf` inputs, by their single key) rather than over the shapes of any particular document.
-    Nesting, lists of lists, a `@nonNull` under a list, and recursive inputs thus need no special case.
+    It recurses over the grammar of types, not over the shape of any document, so nesting, lists of lists, and recursive inputs need no special case.
     """
 
     def __init__(self, mode: Mode, /) -> None:
@@ -122,7 +120,7 @@ class _Builder:
         self._partial: Final = partial
         self._needs: Final[dict[object, bool]] = {}
         self._converters: Final[dict[object, Convert]] = {}
-        # Taken by `build()` alone: a recursive type caches a forwarding converter before its real one exists, which another thread must not get, and call, until it resolves.
+        # A recursive type caches a forwarding converter before its real one exists, which another thread must not call.
         self._lock: Final = Lock()
 
     def _needs_work(self, type_: object, /) -> bool:
@@ -132,11 +130,7 @@ class _Builder:
         return self._needs[type_]
 
     def _solve_needs(self, root: object, /) -> None:
-        """Settle whether each type reachable from *root* needs work, as a least fixed point.
-
-        Types can reach each other in cycles, such as a filter combining filters, so a type cannot be settled from its children alone: it is settled with everything it reaches.
-
-        """
+        # A least fixed point, since types reach each other in cycles, such as a filter combining filters.
         children: dict[object, tuple[object, ...]] = {}
         needs: dict[object, bool] = {}
         pending = [root]
@@ -170,7 +164,7 @@ class _Builder:
         self._needs.update(needs)
 
     def build(self, type_: object, /) -> Convert | None:
-        """The converter for *type_*, or ``None`` if its values need no work, so that a response needing nothing goes from the transport to the caller untouched."""
+        """Return the converter of *type_*, or `None` if its values need no work."""
         with self._lock:
             return self._build(type_)
 
@@ -181,22 +175,21 @@ class _Builder:
         if type_ in self._converters:
             return self._converters[type_]
 
-        # Recursive types reach themselves while being built: they get a forwarding converter, which reads the real one once it exists.
+        # A recursive type reaches itself while being built, and gets a forwarding converter until then.
         cell: list[Convert] = []
         self._converters[type_] = lambda value: cell[0](value)  # noqa: PLW0108
-        converter = self._compute_build(type_)
+        converter = self._new_converter(type_)
         cell.append(converter)
         self._converters[type_] = converter
         return converter
 
-    def _compute_build(self, type_: object, /) -> Convert:
+    def _new_converter(self, type_: object, /) -> Convert:
         inner, metadata = _unwrap(type_)
         codecs = [item for item in metadata if isinstance(item, Codec)]
         convert: Convert | None = None
 
         if codecs:
             (codec,) = codecs
-            # It annotates this very type, so it converts its values.
             convert = cast(Convert, codec.decode if self._parses else codec.encode)
         elif self._needs_work(inner):
             convert = self._build_structure(inner)
@@ -228,11 +221,10 @@ class _Builder:
 
         def convert(value: object, /) -> object:
             assert isinstance(value, Mapping)
-            # A response is the client's own, so it is converted in place; variables are the caller's, who may reuse them, so they are copied.
             result = cast(dict[str, object], value) if in_place else dict(value)
 
             for key, convert_value in steps:
-                # A key may be absent: an optional input, or a field the server skipped.
+                # Absent for an optional input, or a field the server skipped.
                 if key in result:
                     try:
                         result[key] = convert_value(result[key])
@@ -245,7 +237,7 @@ class _Builder:
         return convert
 
     def _build_union(self, type_: object, members: tuple[object, ...], /) -> Convert:
-        # A sentinel, such as `OMITTED`, is never converted, as `None` is not.
+        # A sentinel, such as `OMITTED`, is not converted, like `None`.
         non_null = tuple(
             member
             for member in members
@@ -275,7 +267,6 @@ class _Builder:
         return convert_nullable
 
     def _build_dispatch(self, type_: object, members: tuple[object, ...], /) -> Convert:
-        """Tell the members of a union apart, by `__typename` or else by their single key."""
         typed_dicts = [_unwrap(member)[0] for member in members]
 
         if not all(is_typeddict(member) for member in typed_dicts):
@@ -295,7 +286,7 @@ class _Builder:
 
             def convert_by_typename(value: object, /) -> object:
                 assert isinstance(value, Mapping)
-                # A member added after generation is not converted: nothing is validated.
+                # A member added after codegen passes as is: nothing is validated.
                 converter = by_typename.get(value["__typename"])
                 return value if converter is None else converter(value)
 
@@ -316,7 +307,7 @@ class _Builder:
         def convert_by_key(value: object, /) -> object:
             assert isinstance(value, Mapping)
             (key,) = value
-            # A struct's payload may hold a member added after generation, which is not converted either.
+            # A member added after codegen passes as is, like above.
             converter = by_key.get(key)
             return value if converter is None else converter(value)
 
@@ -356,7 +347,6 @@ _SERIALIZE: Final = _Builder("serialize")
 
 
 def build_parser(type_: object, /, *, partial: bool) -> Convert | None:
-    """A *partial* parser is for the data of a response with errors, where a `@nonNull` field is null when it raised: the null propagates to the field's nearest nullable parent, and a :class:`UnexpectedNullError` only escapes when there is none."""
     return (_PARTIAL_PARSE if partial else _PARSE).build(type_)
 
 
@@ -368,7 +358,7 @@ def build_injector_serializers(
     injector_functions_type: object, /
 ) -> dict[str, Convert | None]:
     return {
-        # Each hint is `Callable[[], T]`, whose `T` tells the serializer.
+        # Each hint is `Callable[[], T]`: the serializer is `T`'s.
         name: build_serializer(get_args(_unwrap(hint)[0])[-1])
         for name, hint in get_type_hints(
             injector_functions_type, include_extras=True

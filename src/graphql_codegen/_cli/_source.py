@@ -1,5 +1,3 @@
-"""Read a project's GraphQL: its documents' files, and its schema, whatever form it comes in."""
-
 import json
 from collections.abc import Sequence
 from pathlib import Path
@@ -14,7 +12,7 @@ from graphql_codegen._cli._schema_pointer import (
     IntrospectionResult,
     SchemaPointer,
 )
-from graphql_codegen._note import error_note
+from graphql_codegen._error_note import error_note
 
 
 def read_sources(globs: Sequence[str], /, *, directory: Path) -> list[Source]:
@@ -24,7 +22,7 @@ def read_sources(globs: Sequence[str], /, *, directory: Path) -> list[Source]:
         matched = {path for path in directory.glob(glob) if path.is_file()}
 
         if not matched:
-            # Also catches https://the-guild.dev/graphql/config's braces and negation, which `pathlib` reads literally: a negation would otherwise leave in what it means to leave out.
+            # Also catches graphql-config's braces and negation, which `pathlib` reads literally.
             raise ValueError(f"Expected `{glob}` to match at least one file.")
 
         paths |= matched
@@ -34,7 +32,7 @@ def read_sources(globs: Sequence[str], /, *, directory: Path) -> list[Source]:
     # Sorted, so that the package does not depend on the file system's order.
     for path in sorted(paths):
         text = path.read_text(encoding="utf-8")
-        # Named by their POSIX paths, in which a module next to a document is placed.
+        # The name is the path, which places a document's sibling module.
         sources.append(Source(text, path.as_posix()))
 
     return sources

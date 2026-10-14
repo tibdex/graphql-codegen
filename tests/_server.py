@@ -1,22 +1,21 @@
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 from typing import override
 
 type PostHandler = Callable[[BaseHTTPRequestHandler], None]
-"""How a local HTTP server handles each POST request."""
 
 
 @contextmanager
-def serve(post_handler: PostHandler, /) -> Iterator[str]:
+def serve(post_handler: PostHandler, /) -> Generator[str]:
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self) -> None:
             post_handler(self)
 
         @override
         def log_message(self, format: str, *args: object) -> None:
-            """Keep the test's output clean."""
+            pass
 
     host = "127.0.0.1"
 

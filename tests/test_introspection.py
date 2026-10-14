@@ -27,7 +27,6 @@ def _generated_module() -> bytes:
         document=parse(
             Source(_DOCUMENT.read_text(encoding="utf-8"), _DOCUMENT.as_posix())
         ),
-        # Every schema answers introspection.
         schema=build_schema("type Query { _: Boolean }"),
         config=Config(
             document_sibling_module=DocumentSiblingModule(
@@ -44,7 +43,7 @@ def _generated_module() -> bytes:
 
 
 def test_the_introspection_document_s_module_is_what_the_library_generates() -> None:
-    # The rest of the generated package is the library itself.
+    # Only this module is checked in: the CLI uses the library's own runtime rather than a copy.
     assert _MODULE.read_bytes() == _generated_module()
 
 
@@ -74,7 +73,6 @@ def test_an_endpoint_is_introspected_with_its_headers_for_all_it_supports(
 def test_an_older_endpoint_is_asked_only_what_it_knows(
     graphql_server: Callable[[GraphqlHandler], str], bookshop_schema: GraphQLSchema
 ) -> None:
-    """As a server predating every introspection field added since the October 2016 edition of the spec."""
     later = {"description", "isDeprecated", "isOneOf", "isRepeatable", "specifiedByURL"}
     queries: list[str] = []
 
@@ -89,7 +87,7 @@ def test_an_older_endpoint_is_asked_only_what_it_knows(
                 for type_ in result["data"].values()
                 for field in type_["fields"]
             }
-            # Names the server really answers, rather than misspelled ones that would strip nothing.
+            # Guards the test: a misspelled name would strip nothing.
             assert later <= known, later - known
 
             for type_ in result["data"].values():

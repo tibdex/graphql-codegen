@@ -5,7 +5,7 @@ from itertools import count
 from typing import Final, Self, assert_never, final
 
 _MARK: Final = "\x00"
-"""What starts a placeholder, and separates its creation counter from its preferred name: NUL, which no identifier holds and no text starts with, and which Python refuses in source, so that a placeholder left in a name fails to compile rather than go unnoticed."""
+"""NUL: no identifier holds it, and Python refuses it in source, so that a placeholder left in a name fails to compile."""
 
 _counter: Final = count()
 
@@ -16,7 +16,7 @@ def is_bindable(name: str, /) -> bool:
         return False
 
     try:
-        # Asking Python itself instead of checking against a list of exceptions that could go stale.
+        # Python itself, rather than a list of keywords that could go stale.
         compile(f"{name} = None", "<name>", "exec")
     except SyntaxError:
         return False
@@ -26,14 +26,11 @@ def is_bindable(name: str, /) -> bool:
 
 @final
 class PendingSpelling:
-    """Nothing prevents a schema or a document from using any name the generator could pick in advance, so none is safe.
-
-    An emitter therefore never writes a name it adds: it makes a pending spelling of the name it would prefer, and uses it wherever the name goes, its placeholder holding the place.
-    """
+    """No name picked in advance is safe, since a schema or a document may use it: an emitter writes a placeholder, settled once its module is complete."""
 
     def __init__(self, preferred: str, /) -> None:
         assert preferred.isidentifier(), f"Expected `{preferred}` to be an identifier."
-        # A class body would mangle a name starting with two underscores, unless it also ends with two, as `_GetData`'s nested `__GetData_x` would be when an operation is named `_Get`.
+        # A class body would mangle a `__` name, such as `__GetData_x` nested in an operation named `_Get`.
         unmangled = (
             f"_{preferred.lstrip('_')}"
             if preferred.startswith("__") and not preferred.endswith("__")
@@ -52,11 +49,6 @@ class SettledSpelling(str):
 
 
 type Spelling = PendingSpelling | SettledSpelling
-"""How generated code writes a name.
-
-- :class:`PendingSpelling`: added by the generator, so decided by :func:`settle_module` once its module is complete.
-- :class:`SettledSpelling`: known up front, such as a public one, so decided at once by :func:`settle_names`.
-"""
 
 
 def ast_str(spelling: Spelling, /) -> str:
@@ -108,7 +100,7 @@ def _identifiers(module: ast.Module, /) -> Iterator[str]:
 
 
 def _rewrite(module: ast.Module, spellings: Mapping[str, SettledSpelling], /) -> None:
-    # Lists of identifiers, as `global`, `nonlocal`, and keyword class patterns hold, are left: generated code writes none.
+    # `global` and `nonlocal` hold lists of names, which generated code never writes.
     for node in ast.walk(module):
         for field, value in ast.iter_fields(node):
             if isinstance(value, str) and value in spellings:
@@ -116,12 +108,9 @@ def _rewrite(module: ast.Module, spellings: Mapping[str, SettledSpelling], /) ->
 
 
 def settle_module(module: ast.Module, /) -> None:
-    """The other names are fixed, since they come from GraphQL, so a clash is impossible rather than detected.
-
-    Collecting them widely, every name loaded, stored, or imported anywhere in the module, class body keys included, is what makes that hold without reasoning about scopes.
-    """
+    """Every name the module loads, stores, or imports is taken, whatever its scope, so that a placeholder never clashes with a GraphQL name."""
     fixed = set(_identifiers(module))
-    # In creation order, which the counter after the first mark records.
+    # In creation order.
     placeholders = sorted(
         {value for value in _strings(module) if _is_placeholder(value)},
         key=lambda placeholder: int(placeholder.split(_MARK)[1]),
@@ -156,7 +145,7 @@ def settle_names(
 
     for name in sorted(
         identifiers,
-        # Names that can be bound as they are come first, so a renamed one never takes the name of a definition spelled that way.
+        # Bindable names first, so that a renamed one never takes a name spelled as is.
         key=lambda name: not is_bindable(name),
     ):
         spelling = next(

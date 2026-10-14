@@ -21,7 +21,7 @@ dependencies = [
   # Python 3.15 is the first whose standard library has all it provides.
   "typing-extensions>=4.16.0; python_version < '3.15'",
 ]
-description = "Turn a GraphQL schema and your operations into a typed Python client with no imposed transport, no validation overhead, and no runtime dependencies"
+description = "Turn a GraphQL schema and your operations into a typed Python package with no imposed transport, no runtime dependencies, and no runtime validation"
 keywords = [
   "client",
   "code generation",
@@ -35,7 +35,7 @@ license-files = ["LICENSE"]
 name = "graphql-codegen"
 readme = "README.md"
 requires-python = ">=3.12"
-version = "0.1.3"
+version = "0.2.0"
 
 [project.optional-dependencies]
 # Only reading a YAML graphql-config file needs it.
@@ -48,7 +48,6 @@ graphql-codegen = "graphql_codegen._cli:main"
 Documentation = "https://github.com/tibdex/graphql-codegen#readme"
 Source = "https://github.com/tibdex/graphql-codegen"
 Issues = "https://github.com/tibdex/graphql-codegen/issues"
-
 
 [dependency-groups]
 dev = [
@@ -75,12 +74,12 @@ branch = true
 parallel = true
 # `python -m graphql_codegen` runs in a subprocess.
 patch = ["subprocess"]
-# The bookshop's copy of the runtime too, since the tests running its client exercise that copy.
-source_pkgs = ["bookshop.client.runtime", "graphql_codegen"]
+# The bookshop's copy of the runtime too: its tests exercise that copy.
+source_pkgs = ["bookshop.graphql.runtime", "graphql_codegen"]
 
 [tool.coverage.paths]
 # Each file of the bookshop's runtime counts as the one it is copied from, which `test_cli.py` checks it is, but for its first line.
-runtime = ["src/graphql_codegen/runtime/", "*/bookshop/client/runtime/"]
+runtime = ["src/graphql_codegen/runtime/", "*/bookshop/graphql/runtime/"]
 
 [tool.coverage.report]
 exclude_also = [
@@ -102,65 +101,74 @@ testpaths = ["tests"]
 [tool.ruff]
 extend-exclude = [
   # Generated.
-  "bookshop/client",
+  "bookshop/graphql",
   "bookshop/*_graphql.py",
   "src/graphql_codegen/_cli/*_graphql.py",
-  # Its snippets are the generated client and the bookshop's modules verbatim, which `test_readme.py` checks.
+  # Its code blocks are the generated package's and the bookshop's modules verbatim, which `test_readme.py` checks.
   "README.md",
 ]
 
 [tool.ruff.lint]
+# Preview mode, for naming rules rather than numbering them; its rules stay out of `ALL`.
+preview = true
+explicit-preview-rules = true
 ignore = [
-  "ASYNC109", # A transport takes the timeout of the HTTP client it wraps.
-  "C901",     # Judged in review rather than by counting branches.
-  "COM812",   # Conflicts with the formatter.
-  "CPY001",
-  "D100",
-  "D101",
-  "D102",
-  "D103",
-  "D104",
-  "D105",
-  "D106",
-  "D107",
-  "E501",
-  "EM101",
-  "EM102",
-  "ISC001",   # Conflicts with the formatter.
-  "PLC0414",  # `X as X` is how PEP 484 marks a re-export, in any module and not only an `__init__.py`.
-  "PLR0913",  # Keyword-only parameters, as every setting is, do not add up.
-  "S101",     # Asserts state what the type checkers cannot prove.
-  "TC",       # `get_type_hints()` resolves annotations at run time, so what they name must be imported then.
-  "TRY003",
-  "UP046",    # `Generic` declares what PEP 695 cannot: a default before Python 3.13, as a client's transport has, and a variance, as `Operation` has.
+  "assert",                                    # Asserts state what the type checkers cannot prove.
+  "f-string-in-exception",                     # The message is the point of a raise, so it stays on its line rather than in a variable.
+  "line-too-long",                             # The formatter already wraps code, and a sentence of prose or a message is one line however long.
+  "missing-copyright-notice",                  # LICENSE file is enough.
+  "missing-trailing-comma",                    # Conflicts with the formatter.
+  "raise-vanilla-args",                        # Each message names its values, so it cannot move into an exception class without one per message.
+  "raw-string-in-exception",                   # As `f-string-in-exception`.
+  "runtime-cast-value",                        # A `cast()` spells its type like an annotation: unquoted.
+  "single-line-implicit-string-concatenation", # Conflicts with the formatter.
+  "too-many-arguments",                        # A keyword-only parameter costs its caller nothing, since it is named: `too-many-positional-arguments` counts the ones that do.
+  # Reflection resolves annotations at run time, so no import goes in a `TYPE_CHECKING` block.
+  "typing-only-first-party-import",
+  "typing-only-standard-library-import",
+  "typing-only-third-party-import",
+  "undocumented-magic-method",
+  "undocumented-public-class",
+  "undocumented-public-function",
+  "undocumented-public-init",
+  "undocumented-public-method",
+  "undocumented-public-module",
+  "undocumented-public-nested-class",
+  "undocumented-public-package",
+  "useless-import-alias",                      # `X as X` is how PEP 484 marks a re-export, in any module and not only an `__init__.py`.
 ]
 select = ["ALL"]
 
 [tool.ruff.lint.per-file-ignores]
-# Examples printing, and asserting on what an error carries to show it: pytest's rules are for tests.
-"bookshop/*" = ["PT017", "T201"]
-# Asserts combine the conditions one message explains, and the library's modules reach each other's private members: a leading underscore keeps a name from callers, not from the library.
-"src/*" = ["PT018", "SLF001"]
-# Copied into every generated package, whatever its name.
-"src/graphql_codegen/runtime/*" = ["TID252"]
-"src/graphql_codegen/_cli/__init__.py" = ["T201"]
-# Scripts the tests run, not modules they import.
-"tests/__resources__/*" = ["INP001"]
-# Fakes take arguments they ignore, names mirror GraphQL's, as generated ones do, and subprocesses run what the tests build.
+"bookshop/*" = [
+  "async-function-with-timeout",
+  "print",
+  "pytest-assert-in-except",
+]
+"src/*" = ["private-member-access", "pytest-composite-assertion"]
+"src/graphql_codegen/runtime/*" = ["relative-imports"]
+"src/graphql_codegen/runtime/error.py" = [
+  "non-pep695-generic-class", # A legacy `TypeVar`, since a default for a PEP 695 type parameter needs Python 3.13.
+]
+"src/graphql_codegen/_cli/__init__.py" = ["print"]
+"tests/__resources__/*" = ["implicit-namespace-package"]
 "tests/*" = [
-  "ANN401",
-  "ARG001",
-  "ARG005",
-  "N801",
-  "N815",
-  "PLR0917",
-  "PLR2004",
-  "S603",
-  "SLF001",
+  "any-type",
+  "invalid-class-name",
+  "magic-value-comparison",
+  "mixed-case-variable-in-class-scope",
+  "private-member-access",
+  "subprocess-without-shell-equals-true",
+  "too-many-positional-arguments",
+  "unused-function-argument",
+  "unused-lambda-argument",
 ]
 
 [tool.ruff.lint.flake8-tidy-imports]
 ban-relative-imports = "all"
+
+[tool.ruff.lint.mccabe]
+max-complexity = 12
 
 [tool.ruff.lint.isort]
 combine-as-imports = true

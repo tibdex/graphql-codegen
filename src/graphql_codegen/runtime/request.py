@@ -1,0 +1,34 @@
+# Copied into each generated package, where this line says not to edit it.
+
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+from collections.abc import Callable
+from typing import Final, final
+
+from ._operation_type import OperationType
+from .injection import _Injectors
+
+
+class Request[Type: OperationType, Data](ABC):
+    def __init__(self, *, operation_type: Type) -> None:
+        """Private."""
+        self._operation_type: Final = operation_type
+
+    @abstractmethod
+    def prepare(self, *, injectors: _Injectors | None = None) -> PreparedRequest[Data]:
+        """*injectors* are called once, here, so the prepared request always sends the same values."""
+
+
+@final
+class PreparedRequest[Data]:
+    def __init__(self, body: bytes, /, *, parse: Callable[[bytes], Data]) -> None:
+        """Private."""
+        self._body: Final = body
+        self._parse: Final = parse
+
+    def __bytes__(self) -> bytes:
+        return self._body
+
+    def parse(self, raw: bytes, /) -> Data:
+        return self._parse(raw)

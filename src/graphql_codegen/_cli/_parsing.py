@@ -1,9 +1,7 @@
-"""Parse the values of a config file, noting where each error is."""
-
 from collections.abc import Callable, Mapping
 from typing import cast
 
-from graphql_codegen._note import error_note
+from graphql_codegen._error_note import error_note
 
 
 def check_all_read(unread: dict[str, object], /) -> None:
@@ -14,10 +12,10 @@ def check_all_read(unread: dict[str, object], /) -> None:
 
 
 def parse_dict(value: object, /) -> dict[str, object]:
-    """Return a shallow-copy of *value*."""
     if not isinstance(value, Mapping) or not all(isinstance(key, str) for key in value):
         raise TypeError(f"Expected a mapping with string keys, but got `{value!r}`.")
 
+    # A copy, since `optional()` pops the keys it reads.
     return dict(cast(Mapping[str, object], value))
 
 

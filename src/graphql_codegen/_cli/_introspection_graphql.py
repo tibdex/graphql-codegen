@@ -3,6 +3,7 @@
 import builtins as _builtins
 import typing as _typing
 from graphql_codegen.runtime import _compat
+from graphql_codegen.runtime import _operation_type
 from graphql_codegen.runtime import _reflection
 from graphql_codegen import runtime as _runtime
 
@@ -29,7 +30,7 @@ class IntrospectionProbeData(_compat.TypedDict, closed=True):
     directive: _typing.Annotated[FieldNames, _reflection.NON_NULL]
     """Request the type information of a single type."""
 
-IntrospectionProbe: _runtime.Operation[_typing.Literal['query'], IntrospectionProbeVariables, IntrospectionProbeData] = _runtime.Operation(operation_type='query', name='IntrospectionProbe', document="""query IntrospectionProbe {
+IntrospectionProbe: _typing.Final = _runtime.Operation(operation_type=_operation_type.QUERY, name='IntrospectionProbe', document="""query IntrospectionProbe {
   schema§: __type(name: "__Schema") {
     ...FieldNames
   }

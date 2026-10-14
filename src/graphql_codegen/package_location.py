@@ -13,18 +13,17 @@ class PackageLocation:
     """Where the generated package lives."""
 
     module_root: PurePosixPath
-    """Where the package's top-level package starts."""
+    """The directory the package's dotted name starts from."""
 
     package: str
-    """The package's dotted name, which a module outside it imports it by."""
+    """The package's dotted name, such as `my_app._graphql`."""
 
     def __post_init__(self) -> None:
-        # Parsed eagerly, so that no location holds a package it cannot use.
+        # Fail on a bad name now, not at first use.
         _ = self._parts
 
     @cached_property
     def _parts(self) -> tuple[str, ...]:
-        """The names the package's dotted name holds."""
         parts = tuple(self.package.split("."))
 
         if not all(is_bindable(part) for part in parts):

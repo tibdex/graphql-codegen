@@ -2,23 +2,23 @@ from dataclasses import dataclass
 from functools import cached_property
 from typing import final
 
+from graphql_codegen._error_note import error_note
 from graphql_codegen._generator.dotted_name import Reference, parse_dotted_name
-from graphql_codegen._note import error_note
 
 
 @final
 @dataclass(frozen=True, kw_only=True)
 class Codec:
-    """The functions converting a scalar's value between JSON and Python, such as a :class:`~datetime.datetime` sent as an ISO string."""
+    """The functions converting a scalar's values between JSON and Python, such as a `datetime` sent as an ISO 8601 string."""
 
     decode: str
-    """The dotted name of the function converting its JSON value to its Python one."""
+    """The dotted name of the function turning the JSON value into the Python one."""
 
     encode: str
-    """The dotted name of the function converting its Python value to its JSON one."""
+    """The dotted name of the function turning the Python value into the JSON one."""
 
     def __post_init__(self) -> None:
-        # Parsed eagerly, so that no codec holds a dotted name it cannot use.
+        # Fail on a bad name now, not at first use.
         _ = self._decode_reference, self._encode_reference
 
     @cached_property
@@ -35,22 +35,22 @@ class Codec:
 @final
 @dataclass(frozen=True, kw_only=True)
 class Scalar:
-    """How a scalar is typed, and converted if its Python value differs from its JSON one.
+    """How a scalar is typed, and converted when its Python value differs from its JSON one.
 
-    Not only a custom scalar: a built-in one can be given a type of its own too, such as `ID` typed `my_app.UserId`.
+    A built-in scalar can be given a type too, such as `ID` typed `my_app.UserId`.
     """
 
     type: str
     """The dotted name of its Python type.
 
-    When :attr:`codec` is ``None``, it must describe the decoded JSON value: a builtin, such as :class:`int`, or a :class:`typing.NewType` or type alias of one, such as `my_app.Isbn = NewType("Isbn", str)`.
+    Without a codec, it must be the type JSON decodes to: a builtin such as `int`, or a `NewType` or alias of one.
     """
 
     codec: Codec | None = None
-    """When ``None``, the value stays as JSON decodes it."""
+    """When `None`, the value stays as JSON decodes it."""
 
     def __post_init__(self) -> None:
-        # Parsed eagerly, so that no scalar holds a dotted name it cannot use.
+        # Fail on a bad name now, not at first use.
         _ = self._type_reference
 
     @cached_property

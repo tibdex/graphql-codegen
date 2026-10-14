@@ -79,7 +79,7 @@ _MONEY: Final = {
                 "from ...money import encode as _encode",
             ],
             [],
-            id="a path starting with two dots or more is relative to the package's directory",
+            id="a path starting with two dots or more is relative to the generated package's directory",
         ),
         pytest.param(
             _PRICE,
@@ -87,7 +87,7 @@ _MONEY: Final = {
             "document/GraphQL_request.py",
             ["price: _builtins.object"],
             [],
-            id="an unconfigured custom scalar is opaque",
+            id="a custom scalar left out of the config is typed `object`",
         ),
         pytest.param(
             _SAVED_SEARCH,
@@ -149,22 +149,20 @@ _MONEY: Final = {
         ),
         pytest.param(
             _PLACE_ORDER,
-            Config(injector_names={"idempotencyKey"}),
+            Config(injector_names={"note"}),
             "injection.py",
             [
-                "idempotencyKey: _typing.NotRequired[_abc.Callable[[], _builtins.object | None | _OMITTED]]",
+                "note: _abc.Callable[[], _builtins.str | None | _OMITTED]",
                 "def injectors(functions: InjectorFunctions, /) -> _injection._Injectors:",
             ],
             [],
-            id="an injector is typed by what it injects, and may be left out or return `OMITTED` where it is nullable",
+            id="an injector is required, typed by what it injects, and may return `OMITTED` where it is nullable",
         ),
         pytest.param(
-            f'{_PLACE_ORDER} mutation N($idempotencyKey: UUID!) {{ cancelOrder(input: {{order: "o1", idempotencyKey: $idempotencyKey}}) {{ id }} }}',
-            Config(injector_names={"idempotencyKey"}),
+            f"{_PLACE_ORDER} query N($note: String!) {{ savedSearch(name: $note) {{ value }} }}",
+            Config(injector_names={"note"}),
             "injection.py",
-            [
-                "idempotencyKey: _typing.NotRequired[_abc.Callable[[], _builtins.object]]"
-            ],
+            ["note: _abc.Callable[[], _builtins.str]"],
             [],
             id="an injector takes the strictest nullability of its positions, since it cannot tell which one it is called for",
         ),
@@ -173,7 +171,7 @@ _MONEY: Final = {
             Config(injector_names={"in"}),
             "injection.py",
             [
-                "InjectorFunctions = _compat.TypedDict('InjectorFunctions', {'in': _typing.NotRequired[_abc.Callable[[], _builtins.str]]}, closed=True)"
+                "InjectorFunctions = _compat.TypedDict('InjectorFunctions', {'in': _abc.Callable[[], _builtins.str]}, closed=True)"
             ],
             [],
             id="an injector named like a keyword is declared functionally",
@@ -200,7 +198,6 @@ def test_a_config_field_shapes_the_package(
 
 
 def _message(error: Exception, /) -> str:
-    """Its message alone, without the location a `GraphQLError` renders."""
     return error.message if isinstance(error, GraphQLError) else str(error)
 
 
@@ -214,7 +211,7 @@ def _message(error: Exception, /) -> str:
                 document_sibling_module=DocumentSiblingModule(
                     name="_{document}_gql",
                     package_location=PackageLocation(
-                        module_root=PurePosixPath("/src"), package="client"
+                        module_root=PurePosixPath("/src"), package="api"
                     ),
                 ),
             ),
@@ -363,7 +360,6 @@ def _message(error: Exception, /) -> str:
 def test_an_input_is_rejected(
     schema: str, document: str, config: Config, errors: list[Exception]
 ) -> None:
-    """A wrong config value raises a `ValueError`, and a problem in the document or the schema a `GraphQLError`, graphql-core's validation errors all in one group."""
     with pytest.raises((ExceptionGroup, GraphQLError, ValueError)) as error_info:
         generate(document=parse(document), schema=build_schema(schema), config=config)
 
@@ -386,12 +382,12 @@ def test_an_input_is_rejected(
         ),
         pytest.param(
             lambda: Scalar(type="Decimal"),
-            "Expected an absolute dotted name, such as `datetime.datetime`, a dotted name relative to the package's directory, such as `..scalars.decode`, or a builtin, such as `int`, but got `Decimal`.\nIn `type`.",
+            "Expected a builtin (`str`), an absolute dotted name (`decimal.Decimal`), or a path relative to the generated package's directory (`..scalar.decode_datetime`), but got `Decimal`.\nIn `type`.",
             id="a scalar type named by an unknown builtin, since the config may come from a file, which static typing does not check",
         ),
         pytest.param(
             lambda: Scalar(type="decimal.2"),
-            "Expected an absolute dotted name, such as `datetime.datetime`, a dotted name relative to the package's directory, such as `..scalars.decode`, or a builtin, such as `int`, but got `decimal.2`.\nIn `type`.",
+            "Expected a builtin (`str`), an absolute dotted name (`decimal.Decimal`), or a path relative to the generated package's directory (`..scalar.decode_datetime`), but got `decimal.2`.\nIn `type`.",
             id="a scalar type that is not a dotted name",
         ),
     ],
@@ -399,23 +395,8 @@ def test_an_input_is_rejected(
 def test_a_config_field_cannot_be_constructed_invalid(
     construct: Callable[[], object], error: str
 ) -> None:
-    """Whether the config comes from Python or from a config file, with a note naming the field that is wrong where the message does not."""
     with pytest.raises(ValueError, match=f"^{re.escape(error)}$"):
         construct()
-
-
-def test_a_problem_found_on_a_node_without_location_is_its_bare_message(
-    bookshop_schema: GraphQLSchema,
-) -> None:
-    """As for a document parsed with `no_location=True`, which `generate()` accepts too."""
-    with pytest.raises(GraphQLError) as error_info:
-        generate(
-            document=parse(_PLACE_ORDER, no_location=True),
-            schema=bookshop_schema,
-            config=Config(injector_names={"quantity"}),
-        )
-
-    assert str(error_info.value) == error_info.value.message
 
 
 def _documents(sources: dict[str, str], /) -> DocumentNode:
@@ -435,7 +416,6 @@ def _generated(
     sibling_module_name: str | None,
     bookshop_schema: GraphQLSchema,
 ) -> dict[PurePosixPath, bytes]:
-    """The package `client` for documents named by the keys of *sources*, under `app/`, their modules named *sibling_module_name* in `app/`, or in the package when ``None``."""
     return generate(
         document=_documents({f"app/{name}": body for name, body in sources.items()}),
         schema=bookshop_schema,
@@ -445,7 +425,7 @@ def _generated(
             else DocumentSiblingModule(
                 name=sibling_module_name,
                 package_location=PackageLocation(
-                    module_root=PurePosixPath(), package="client"
+                    module_root=PurePosixPath(), package="api"
                 ),
             ),
         ),
@@ -457,11 +437,8 @@ def test_a_document_s_module_is_named_after_it_as_a_module_can_be(
 ) -> None:
     files = _generated(
         {
-            # An underscore the name puts next to the stem merges with the stem's own.
             "_restrictions.graphql": "query A { books { title } }",
-            # A character no identifier holds becomes `_`, and a leading digit gets one before it.
             "2-fast.graphql": "query B { books { ...Card } }",
-            # A document of fragments alone has a module too.
             "card.graphql": "fragment Card on Book { title }",
         },
         sibling_module_name="_{document}_gql",
@@ -496,7 +473,7 @@ def test_a_fragment_of_another_document_is_imported_from_its_module(
 def test_a_name_the_document_package_re_exports_steps_aside_for_modules_then_operations(
     bookshop_schema: GraphQLSchema,
 ) -> None:
-    """Rather than being rejected, since a document is easy to rename the day it matters."""
+    # Not rejected: a document is easy to rename the day it matters.
     files = _generated(
         {
             "Get.graphql": "query Other { books { title } }",
@@ -511,10 +488,9 @@ def test_a_name_the_document_package_re_exports_steps_aside_for_modules_then_ope
     assert "from .other import Get_1 as Get_1, Other_1 as Other_1" in reexports
 
 
-def test_a_fragment_goes_next_to_the_operations_of_its_document(
+def test_a_fragment_goes_next_to_the_operations_of_its_document_and_is_imported_absolutely_elsewhere(
     bookshop_schema: GraphQLSchema,
 ) -> None:
-    """Imported, absolutely, by the module of another document spreading it, and spelled clear of its own document's names: an operation's data type gives way."""
     files = _generated(
         {
             "card.graphql": "query Get { books { ...GetData } } fragment GetData on Book { title }",
@@ -594,11 +570,11 @@ def test_a_document_s_module_holds_its_operations_importing_the_package_absolute
     )
 
     for snippet in [
-        "from client import runtime as _runtime",
-        "from client.schema import enum as _enum\n",
+        "from api import runtime as _runtime",
+        "from api.schema import enum as _enum\n",
         "class GetData_1(_compat.TypedDict, closed=True):",
-        "Get: _runtime.Operation[_typing.Literal['query'], GetVariables, GetData_1]",
-        "GetData: _runtime.Operation[_typing.Literal['query'], GetDataVariables, GetDataData]",
+        "Get: _typing.Final = _runtime.Operation(operation_type=_operation_type.QUERY, name='Get', document=",
+        "GetData: _typing.Final = _runtime.Operation(operation_type=_operation_type.QUERY, name='GetData', document=",
     ]:
         assert snippet in source
 

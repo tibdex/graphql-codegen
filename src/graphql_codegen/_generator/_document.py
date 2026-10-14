@@ -50,14 +50,13 @@ def parse_operations(
 def insert_typename(
     document: DocumentNode, /, *, schema: GraphQLSchema
 ) -> DocumentNode:
-    """Return *document* selecting `__typename` on every abstract type, since it tells the values apart, for type checkers to narrow and for the parser to convert."""
     type_info = TypeInfo(schema)
 
     class _Visitor(Visitor):
         def enter_selection_set(
             self, node: SelectionSetNode, _key: object, parent: object, *_args: object
         ) -> SelectionSetNode | None:
-            # An inline fragment's selections are gathered into the branches of the selection enclosing it, which that selection's `__typename` tells apart.
+            # An inline fragment's selections join the enclosing selection's branches, which its `__typename` tells apart.
             if (
                 isinstance(parent, InlineFragmentNode)
                 or not is_abstract_type(type_info.get_parent_type())
@@ -65,7 +64,7 @@ def insert_typename(
                     isinstance(selection, FieldNode)
                     and selection.name.value == "__typename"
                     and selection.alias is None
-                    and not selection.directives
+                    and not bool(selection.directives)
                     for selection in node.selections
                 )
             ):

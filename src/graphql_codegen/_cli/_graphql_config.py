@@ -28,8 +28,8 @@ from graphql_codegen._cli._parsing import (
 )
 from graphql_codegen._cli._schema_pointer import SchemaPointer, parse_schema_pointer
 from graphql_codegen._cli._source import read_schema, read_sources
+from graphql_codegen._error_note import error_note
 from graphql_codegen._metadata import DISTRIBUTION_NAME, METADATA
-from graphql_codegen._note import error_note
 from graphql_codegen.config import Config
 from graphql_codegen.document_sibling_module import DocumentSiblingModule
 from graphql_codegen.generate import _Params
@@ -46,7 +46,6 @@ _QUOTED: Final = re.compile(r"\"([^\"]+)\"|'([^']+)'")
 
 
 def read_graphql_config(path: Path, /) -> dict[Path, _Params]:
-    """Return the generation arguments for each project of the graphql-config file at *path* by the directory its package goes to."""
     load = _get_loader(path)
     text = path.read_text(encoding="utf-8")
     config = load(_interpolate(text, environment=os.environ))
@@ -63,14 +62,14 @@ def _interpolate(text: str, /, *, environment: Mapping[str, str]) -> str:
     def replacement(match: re.Match[str], /) -> str:
         name = match["name"]
 
-        # An empty value falls back to the default too.
-        if value := environment.get(name):
+        # As graphql-config does, an empty value falls back to the default.
+        if value := environment.get(name, ""):
             return value
 
         if isinstance(default := match["default"], str):
             stripped = default.strip()
             quoted = _QUOTED.fullmatch(stripped)
-            # One holding a colon may be quoted, in single or double quotes.
+            # graphql-config allows quoting a default, for one holding a colon.
             return (
                 stripped
                 if quoted is None
@@ -131,14 +130,14 @@ class _Project:
 
 def _read_project(project: _Project, /, *, directory: Path) -> _Params:
     with error_note(f"In project `{project.name}`."):
-        return _parse_project(
+        return _parse_params(
             project,
             schema=read_schema(project.schema, directory=directory),
             documents=read_sources(project.documents, directory=directory),
         )
 
 
-def _parse_project(
+def _parse_params(
     project: _Project,
     /,
     *,
@@ -159,7 +158,7 @@ def _parse_project(
 
 
 def _parse_sources(sources: Sequence[Source], /) -> DocumentNode:
-    """Parse *sources* into one document, since a fragment defined in one file may be spread in another, and a schema's types spread over several files."""
+    # One document, since a fragment may be spread from another file.
     return DocumentNode(
         definitions=tuple(
             definition for source in sources for definition in parse(source).definitions
@@ -170,7 +169,6 @@ def _parse_sources(sources: Sequence[Source], /) -> DocumentNode:
 def _parse_graphql_config(
     config: object, /, *, directory: PurePosixPath
 ) -> dict[Path, _Project]:
-    """The projects of *config*, the graphql-config file in *directory*, by the directory each package goes to."""
     root = parse_dict(config)
     entries = (
         required(root, "projects", parse_dict)
@@ -181,12 +179,10 @@ def _parse_graphql_config(
 
     for name, entry in entries.items():
         with error_note(f"In project `{name}`."):
-            project = _project(entry, name=name, directory=directory)
+            project = _parse_project(entry, name=name, directory=directory)
 
         if project is None:
             continue
-
-        # Derived from both, which needs no IO, unlike finding where packages start from a directory.
 
         package_directory = Path(project.package_location._package_directory)
 
@@ -203,7 +199,7 @@ def _parse_graphql_config(
     return projects
 
 
-def _project(
+def _parse_project(
     value: object, /, *, name: str, directory: PurePosixPath
 ) -> _Project | None:
     entry = parse_dict(value)
@@ -217,7 +213,7 @@ def _project(
     package_location, config = parse_at(
         extension,
         key=f"extensions.{_EXTENSION_NAME}",
-        parse=lambda value: _extension(value, directory=directory),
+        parse=lambda value: _parse_extension(value, directory=directory),
     )
     return _Project(
         name=name,
@@ -228,7 +224,7 @@ def _project(
     )
 
 
-def _extension(
+def _parse_extension(
     value: object, /, *, directory: PurePosixPath
 ) -> tuple[PackageLocation, Config]:
     unread = parse_dict(value)
@@ -252,7 +248,7 @@ def _extension(
     non_null_directive_name = optional(
         unread, "nonNullDirectiveName", parse_string, default=None
     )
-    scalars = optional(unread, "scalars", _scalars, default={})
+    scalars = optional(unread, "scalars", _parse_scalars, default={})
     struct_interface_name = optional(
         unread, "structInterfaceName", parse_string, default=None
     )
@@ -267,23 +263,23 @@ def _extension(
     )
 
 
-def _scalars(value: object, /) -> dict[str, Scalar]:
+def _parse_scalars(value: object, /) -> dict[str, Scalar]:
     scalars = parse_dict(value)
     return {
-        scalar_name: required(scalars, scalar_name, _scalar)
+        scalar_name: required(scalars, scalar_name, _parse_scalar)
         for scalar_name in list(scalars)
     }
 
 
-def _scalar(value: object, /) -> Scalar:
+def _parse_scalar(value: object, /) -> Scalar:
     unread = parse_dict(value)
     type_ = required(unread, "type", parse_string)
-    codec = optional(unread, "codec", _codec, default=None)
+    codec = optional(unread, "codec", _parse_codec, default=None)
     check_all_read(unread)
     return Scalar(type=type_, codec=codec)
 
 
-def _codec(value: object, /) -> Codec:
+def _parse_codec(value: object, /) -> Codec:
     unread = parse_dict(value)
     decode = required(unread, "decode", parse_string)
     encode = required(unread, "encode", parse_string)

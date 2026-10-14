@@ -12,6 +12,7 @@ from graphql_codegen._generator._naming import (
     INJECTION,
     INPUT,
     OMITTED,
+    OPERATION_TYPE,
     REFLECTION,
     RUNTIME,
     SCALAR,
@@ -40,12 +41,7 @@ class OutsideModule:
 
 
 type GeneratedModule = PackageModule | OutsideModule
-"""A generated module, by where it sits, which decides how it imports the package's own modules.
-
-- :class:`PackageModule`: relatively, so that the package works wherever it is written.
-- :class:`OutsideModule`: absolutely, since a relative import cannot leave its top-level package.
-
-"""
+"""A module in the package imports its modules relatively, so that the package works wherever it is written, and a module outside it absolutely."""
 
 
 def _import_from(
@@ -61,7 +57,6 @@ def _from_package(
 ) -> ast.ImportFrom:
     match module:
         case PackageModule(path=path):
-            # How far up the package is.
             return _import_from(submodule, name=name, alias=alias, level=len(path) + 1)
         case OutsideModule(package=package):
             return _import_from(
@@ -97,47 +92,21 @@ def helper_imports(
         if ast_str(helper) in used:
             imports.append(import_as(module_name, helper))
 
-    # From the runtime's copy, so that the package needs `typing_extensions` only before Python 3.15.
-    if ast_str(COMPAT) in used:
-        imports.append(
-            _from_package(
-                RUNTIME_PACKAGE, name="_compat", alias=ast_str(COMPAT), module=module
+    for helper, submodule, imported in (
+        # The runtime's shim, so that `typing_extensions` is only needed before Python 3.15.
+        (COMPAT, RUNTIME_PACKAGE, "_compat"),
+        (INJECTION, RUNTIME_PACKAGE, "injection"),
+        (OPERATION_TYPE, RUNTIME_PACKAGE, "_operation_type"),
+        (REFLECTION, RUNTIME_PACKAGE, "_reflection"),
+        (RUNTIME, None, RUNTIME_PACKAGE),
+        (OMITTED, RUNTIME_PACKAGE, "OMITTED"),
+    ):
+        if ast_str(helper) in used:
+            imports.append(
+                _from_package(
+                    submodule, name=imported, alias=ast_str(helper), module=module
+                )
             )
-        )
-
-    if ast_str(INJECTION) in used:
-        imports.append(
-            _from_package(
-                RUNTIME_PACKAGE,
-                name="injection",
-                alias=ast_str(INJECTION),
-                module=module,
-            )
-        )
-
-    if ast_str(REFLECTION) in used:
-        imports.append(
-            _from_package(
-                RUNTIME_PACKAGE,
-                name="_reflection",
-                alias=ast_str(REFLECTION),
-                module=module,
-            )
-        )
-
-    if ast_str(RUNTIME) in used:
-        imports.append(
-            _from_package(
-                None, name=RUNTIME_PACKAGE, alias=ast_str(RUNTIME), module=module
-            )
-        )
-
-    if ast_str(OMITTED) in used:
-        imports.append(
-            _from_package(
-                RUNTIME_PACKAGE, name="OMITTED", alias=ast_str(OMITTED), module=module
-            )
-        )
 
     for helper, schema_module in (
         (ENUM, schema_spellings.enum_module),
@@ -145,10 +114,7 @@ def helper_imports(
     ):
         if ast_str(helper) in used:
             imports.append(
-                # A module of the `schema` package reaches its siblings directly.
-                _import_from(None, name=schema_module, alias=ast_str(helper), level=1)
-                if module == PackageModule(path=(SCHEMA_PACKAGE,))
-                else _from_package(
+                _from_package(
                     SCHEMA_PACKAGE,
                     name=schema_module,
                     alias=ast_str(helper),

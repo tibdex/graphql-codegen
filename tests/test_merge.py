@@ -1,23 +1,21 @@
 import json
 from itertools import product
+from typing import Any
 
 import pytest
 from graphql import GraphQLSchema, OperationDefinitionNode, parse, validate
 
 import bookshop.app_graphql
 import bookshop.get_order_graphql
-from bookshop.client.runtime import Operation as BookshopOperation
-from bookshop.client.runtime._merge import encode_body as encode_bookshop_body
+from bookshop.graphql.runtime import (
+    Operation as BookshopOperation,
+    merge as merge_bookshop,
+)
+from bookshop.transport import INJECTORS
 from graphql_codegen._generator._merge import (
     print_merge_template,
 )
-from graphql_codegen.runtime import Error, Operation
-from graphql_codegen.runtime._literal import OperationType
-from graphql_codegen.runtime._merge import (
-    encode_body,
-    split_merged_data,
-    split_merged_errors,
-)
+from graphql_codegen.runtime import ExecutionError, Operation, Request, merge
 
 _PLACE_ORDER = """
 mutation PlaceOrder($order: PlaceOrderInput!, $note: String! = "gift") {
@@ -44,8 +42,7 @@ mutation CancelOrder($cancellation: CancelOrderInput) {
 """
 
 
-def _operation(source: str, /) -> Operation[OperationType, dict[str, object], object]:
-    """An operation whose document is the template the generator prints."""
+def _operation(source: str, /) -> Operation[Any, dict[str, object], object]:
     document = parse(source, no_location=True)
     (definition,) = (
         definition
@@ -62,20 +59,23 @@ def _operation(source: str, /) -> Operation[OperationType, dict[str, object], ob
     )
 
 
+def _sent(request: Request[Any, object], /) -> dict[str, Any]:
+    return json.loads(bytes(request.prepare()))
+
+
+def _received[Data](request: Request[Any, Data], payload: object, /) -> Data:
+    return request.prepare().parse(json.dumps(payload).encode())
+
+
 def test_operations_merge_into_one() -> None:
-    """Each operation's variables and root fields get its index, and a fragment several spread is defined once."""
     place_order = _operation(_PLACE_ORDER)
-    request = json.loads(
-        encode_body(
-            [
-                (place_order, {"order": 1, "note": "n"}),
-                (_operation(_CANCEL_ORDER), {"cancellation": 2}),
-                (place_order, {"order": 3}),
-            ]
-        ),
+    request = merge(
+        place_order({"order": 1, "note": "n"}),
+        _operation(_CANCEL_ORDER)({"cancellation": 2}),
+        place_order({"order": 3}),
     )
 
-    assert request == {
+    assert _sent(request) == {
         "operationName": "MergedOperation",
         "query": """mutation MergedOperation($order_0: PlaceOrderInput!, $note_0: String! = "gift", $cancellation_1: CancelOrderInput, $order_2: PlaceOrderInput!, $note_2: String! = "gift") {
   placed_0: placeOrder(input: $order_0, channel: "web") {
@@ -102,28 +102,43 @@ fragment OrderSummary on Order {
 }""",
         "variables": {"order_0": 1, "note_0": "n", "cancellation_1": 2, "order_2": 3},
     }
+    assert _received(
+        request, {"data": {"placed_0": 1, "addNote_0": 2, "addNote_2": 3}}
+    ) == (
+        {"placed": 1, "addNote": 2},
+        {},
+        {"addNote": 3},
+    )
 
 
 @pytest.mark.parametrize(
-    ("source", "query"),
+    ("source", "name", "query"),
     [
         pytest.param(
             'query Q @cached { a(name: "§") }',
+            "Q",
             'query Q @cached {\n  a(name: "\\u00a7")\n}',
             id="or one that cannot be merged, whose `§` in a string is still escaped, so that it is not taken for a sigil",
         ),
         pytest.param(
+            _PLACE_ORDER,
+            "PlaceOrder",
+            'mutation PlaceOrder($order: PlaceOrderInput!, $note: String! = "gift") {\n  placed: placeOrder(input: $order, channel: "web") {\n    ...OrderSummary\n    total\n  }\n  addNote(note: $note) {\n    id\n  }\n}\n\nfragment OrderSummary on Order {\n  id\n}',
+            id="keeping an alias of its own",
+        ),
+        pytest.param(
             _CANCEL_ORDER,
-            "mutation CancelOrder($cancellation: CancelOrderInput) {\n  cancelOrder: cancelOrder(input: $cancellation) {\n    __typename\n  }\n}",
-            id="without its sigils, under its own name, each root field aliased as itself",
+            "CancelOrder",
+            "mutation CancelOrder($cancellation: CancelOrderInput) {\n  cancelOrder(input: $cancellation) {\n    __typename\n  }\n}",
+            id="without its sigils and the aliases they made redundant, under its own name",
         ),
     ],
 )
-def test_a_lone_operation_is_sent_without_its_sigils(source: str, query: str) -> None:
-    operation = _operation(source)
-
-    assert json.loads(encode_body([(operation, {"x": 1})])) == {
-        "operationName": operation._name,
+def test_a_lone_operation_is_sent_without_its_sigils(
+    source: str, name: str, query: str
+) -> None:
+    assert _sent(_operation(source)({"x": 1})) == {
+        "operationName": name,
         "query": query,
         "variables": {"x": 1},
     }
@@ -159,62 +174,68 @@ def test_a_lone_operation_is_sent_without_its_sigils(source: str, query: str) ->
 )
 def test_an_operation_merged_with_itself(source: str, snippets: list[str]) -> None:
     operation = _operation(source)
-    query = json.loads(encode_body([(operation, {}), (operation, {})]))["query"]
+    query = _sent(merge(operation({}), operation({})))["query"]
 
     for snippet in snippets:
         assert snippet in query
 
 
-@pytest.mark.parametrize(
-    ("sources", "message"),
-    [
-        pytest.param([], "Cannot merge no operation.", id="no operation"),
-        pytest.param(
-            [_CANCEL_ORDER, "query Q { a }"],
-            "different types: mutation, query",
-            id="operations of different types",
-        ),
-        pytest.param(
-            ["query Q @cached { a }"] * 2,
-            "Cannot merge `Q`: its document has no `§`",
-            id="an operation with directives of its own, which would apply to the whole merge, so that its template has no sigil, as a subscription's has none",
-        ),
-    ],
-)
-def test_a_merge_is_rejected(sources: list[str], message: str) -> None:
-    with pytest.raises(ValueError, match=message):
-        encode_body([(_operation(source), {}) for source in sources])
+def test_an_operation_with_directives_of_its_own_cannot_be_merged() -> None:
+    # They would apply to the whole merge, so its template has no sigil, as a subscription's has none.
+    operation = _operation("query Q @cached { a }")
 
-
-def test_the_data_of_a_merge_splits_back_in_order() -> None:
-    assert split_merged_data(
-        {"placed_0": 1, "addNote_0": 2, "addNote_2": 3}, count=3
-    ) == [{"placed": 1, "addNote": 2}, {}, {"addNote": 3}]
+    with pytest.raises(ValueError, match="Cannot merge `Q`: its document has no `§`"):
+        merge(operation({}), operation({})).prepare()
 
 
 def test_the_errors_of_a_merge_split_back_to_their_operations_with_their_own_paths() -> (
     None
 ):
-    assert split_merged_errors(
-        [
-            {"message": "a", "path": ["cancelOrder_1", "lines", 0]},
-            {"message": "b"},
-            # A response name holding the separator is split at its last one.
-            {"message": "c", "path": ["gift_wrap_0"]},
-        ],
-        count=2,
-    ) == [
-        [{"message": "b"}, {"message": "c", "path": ["gift_wrap"]}],
-        [{"message": "a", "path": ["cancelOrder", "lines", 0]}, {"message": "b"}],
-    ]
+    gift_wrap = _operation("mutation GiftWrap { gift_wrap { id } }")
+    first, second = _received(
+        merge(
+            gift_wrap({}).returning_error(),
+            _operation(_CANCEL_ORDER)({}).returning_error(),
+        ),
+        {
+            "data": {"gift_wrap_0": None, "cancelOrder_1": None},
+            "errors": [
+                {"message": "a", "path": ["cancelOrder_1", "lines", 0]},
+                {"message": "b"},
+                # A name holding the separator splits at its last one.
+                {"message": "c", "path": ["gift_wrap_0"]},
+            ],
+        },
+    )
+
+    assert isinstance(first, ExecutionError)
+    assert isinstance(second, ExecutionError)
+    assert (first.data, first.errors) == (
+        {"gift_wrap": None},
+        ({"message": "b"}, {"message": "c", "path": ["gift_wrap"]}),
+    )
+    assert (second.data, second.errors) == (
+        {"cancelOrder": None},
+        ({"message": "a", "path": ["cancelOrder", "lines", 0]}, {"message": "b"}),
+    )
 
 
-def test_the_data_and_errors_of_a_lone_operation_are_its_own_uncopied() -> None:
-    data = {"placed": 13}
-    errors: list[Error] = [{"message": "boom", "path": ["placed"]}]
+def test_a_merge_of_one_request_sends_and_reads_it_as_itself() -> None:
+    request = merge([_operation(_CANCEL_ORDER)({"cancellation": 2}).returning_error()])
+    (error,) = _received(
+        request,
+        {
+            "data": {"cancelOrder": None},
+            "errors": [{"message": "boom", "path": ["cancelOrder"]}],
+        },
+    )
 
-    assert split_merged_data(data, count=1)[0] is data
-    assert split_merged_errors(errors, count=1)[0] is errors
+    assert _sent(request)["operationName"] == "CancelOrder"
+    assert isinstance(error, ExecutionError)
+    assert (error.data, error.errors) == (
+        {"cancelOrder": None},
+        ({"message": "boom", "path": ["cancelOrder"]},),
+    )
 
 
 @pytest.mark.parametrize(
@@ -246,7 +267,6 @@ def test_what_cannot_keep_its_shape_in_a_merge_is_inlined_in_the_template(
 def test_every_bookshop_operation_merges_with_every_other_of_its_type_into_a_valid_document(
     bookshop_schema: GraphQLSchema,
 ) -> None:
-    """Exhaustive over the corpus, which covers every shape the generator prints, rather than sampled."""
     operations = [
         value
         for module in (bookshop.app_graphql, bookshop.get_order_graphql)
@@ -264,14 +284,14 @@ def test_every_bookshop_operation_merges_with_every_other_of_its_type_into_a_val
     }
 
     for operation in operations:
-        lone = json.loads(encode_bookshop_body([(operation, {})]))["query"]
-        assert not validate(bookshop_schema, parse(lone)), operation._name
+        lone = json.loads(bytes(operation({}).prepare(injectors=INJECTORS)))["query"]
+        assert not validate(bookshop_schema, parse(lone)), operation
 
     for first, second in product(mergeable, repeat=2):
         if first._operation_type != second._operation_type:
             continue
 
-        merged = json.loads(encode_bookshop_body([(first, {}), (second, {})]))["query"]
-        assert not validate(bookshop_schema, parse(merged)), (
-            f"{first.name} and {second.name}"
-        )
+        merged = json.loads(
+            bytes(merge_bookshop(first({}), second({})).prepare(injectors=INJECTORS))
+        )["query"]
+        assert not validate(bookshop_schema, parse(merged)), (first, second)

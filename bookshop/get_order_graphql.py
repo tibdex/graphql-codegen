@@ -2,12 +2,13 @@
 
 import builtins as _builtins
 import typing as _typing
-from bookshop.client.runtime import _compat
-from bookshop.client import runtime as _runtime
-from bookshop.client.schema import enum as _enum
+from bookshop.graphql.runtime import _compat
+from bookshop.graphql.runtime import _operation_type
+from bookshop.graphql import runtime as _runtime
+from bookshop.graphql.schema import enum as _enum
 
 class GetOrderVariables(_compat.TypedDict, closed=True):
-    id: _typing.Required[_builtins.str]
+    id: _builtins.str
 
 class _GetOrderData_order(_compat.TypedDict, closed=True):
     id: _builtins.str
@@ -17,7 +18,7 @@ class GetOrderData(_compat.TypedDict, closed=True):
     order: _GetOrderData_order | None
     """The order with this identifier."""
 
-GetOrder: _runtime.Operation[_typing.Literal['query'], GetOrderVariables, GetOrderData] = _runtime.Operation(operation_type='query', name='GetOrder', document="""query GetOrder($id§: ID!) {
+GetOrder: _typing.Final = _runtime.Operation(operation_type=_operation_type.QUERY, name='GetOrder', document="""query GetOrder($id§: ID!) {
   order§: order(id: $id§) {
     id
     status

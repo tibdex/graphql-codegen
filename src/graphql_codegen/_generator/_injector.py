@@ -32,6 +32,8 @@ from graphql_codegen._generator._schema import as_non_null
 from graphql_codegen._generator._typed_dict import Key, emit_closed
 from graphql_codegen._generator.spelling import SettledSpelling
 
+type Injections = Mapping[str, Mapping[tuple[str, ...], GraphQLInputType]]
+
 
 def get_injections(
     operation: OperationDefinitionNode,
@@ -39,12 +41,8 @@ def get_injections(
     *,
     schema: GraphQLSchema,
     injector_names: AbstractSet[str],
-) -> dict[str, dict[tuple[str, ...], GraphQLInputType]]:
-    """An injected variable goes in the variables themselves, `()`.
-
-    An injected field goes in every input object holding it, at any depth, since a mutation takes the transaction it belongs to inside its input rather than beside it.
-    A static path can say neither "every element of this list" nor the unbounded depth of a recursive input type, so an injected field reached that way fails generation rather than being silently left out.
-    """
+) -> Injections:
+    """An injected variable goes at `()`, and an injected field in every input object holding it, at any depth."""
     injections: dict[str, dict[tuple[str, ...], GraphQLInputType]] = {}
 
     def holds_injected_field(
@@ -66,7 +64,6 @@ def get_injections(
         )
 
     def visit_input(
-        input_type: GraphQLInputObjectType,
         wrapped_type: GraphQLType,
         /,
         *,
@@ -74,6 +71,11 @@ def get_injections(
         ancestors: tuple[str, ...],
         definition: VariableDefinitionNode,
     ) -> None:
+        input_type = get_named_type(wrapped_type)
+
+        if not isinstance(input_type, GraphQLInputObjectType):
+            return
+
         nullable_type = (
             wrapped_type.of_type
             if isinstance(wrapped_type, GraphQLNonNull)
@@ -93,16 +95,12 @@ def get_injections(
                 injections.setdefault(field_name, {})[path] = field.type
                 continue
 
-            named_type = get_named_type(field.type)
-
-            if isinstance(named_type, GraphQLInputObjectType):
-                visit_input(
-                    named_type,
-                    field.type,
-                    path=(*path, field_name),
-                    ancestors=(*ancestors, input_type.name),
-                    definition=definition,
-                )
+            visit_input(
+                field.type,
+                path=(*path, field_name),
+                ancestors=(*ancestors, input_type.name),
+                definition=definition,
+            )
 
     for definition in operation.variable_definitions or ():
         variable_name = definition.variable.name.value
@@ -118,30 +116,21 @@ def get_injections(
                 "GraphQLInputType", variable_type
             )
             continue
-        named_type = get_named_type(variable_type)
 
-        if isinstance(named_type, GraphQLInputObjectType):
-            visit_input(
-                named_type,
-                variable_type,
-                path=(variable_name,),
-                ancestors=(),
-                definition=definition,
-            )
+        visit_input(
+            variable_type, path=(variable_name,), ancestors=(), definition=definition
+        )
 
     return injections
 
 
 def get_injected_types(
-    injections: Mapping[str, Mapping[str, Mapping[tuple[str, ...], GraphQLInputType]]],
+    injections: Mapping[str, Injections],
     /,
     *,
     injector_names: AbstractSet[str],
 ) -> dict[str, GraphQLInputType]:
-    """An injector supplies one value for every position it is injected into, so they must all have the same type, nullability aside.
-
-    Its type is then the strictest: non-null wherever any position is, since a non-null value suits a nullable position too, while an injector cannot tell which position it is called for.
-    """
+    """An injector has one type wherever it is injected, nullability aside, and the strictest: a non-null value suits a nullable position too."""
     positions: dict[str, dict[str, str]] = {}
     types: dict[str, list[GraphQLInputType]] = {}
 
@@ -166,7 +155,6 @@ def get_injected_types(
                 + "."
             )
 
-    # An injector injected nowhere, a misspelled one for instance, has no position to take its type from.
     if nowhere := sorted(injector_names - types.keys()):
         raise ValueError(
             f"Expected `{nowhere[0]}` to be injected somewhere, but no operation sends a variable or an input field of that name."
@@ -193,15 +181,15 @@ def _strictest(left: GraphQLInputType, right: GraphQLInputType, /) -> GraphQLInp
 def emit_injector_module(
     injected_types: Mapping[str, GraphQLInputType], /, *, annotations: AnnotationBuilder
 ) -> list[ast.stmt]:
-    """The mapping of functions is a :class:`typing.TypedDict`, rather than keyword arguments, so that a name no keyword can spell is injected too, and a misspelled name fails type checking with every type checker.
+    """A TypedDict rather than keyword arguments, so that a name no keyword can spell is injected too.
 
-    It builds the runtime's private :class:`~graphql_codegen.runtime.injection._Injectors` rather than being given to a client, so that a client only calls injectors that were type checked.
+    It builds the runtime's private `_Injectors`, so that `Request.prepare()` only calls injectors that were type checked.
     """
     functions_spelling, function_spelling = (
         SettledSpelling("InjectorFunctions"),
         SettledSpelling("injectors"),
     )
-    # Local to the function, so that nothing can clash with it.
+    # A parameter name, which nothing in the module can clash with.
     functions = SettledSpelling("functions")
     keys: list[Key] = []
 
@@ -220,7 +208,7 @@ def emit_injector_module(
                 annotation=subscript(
                     qualified(ABC, "Callable"), ast.List(elts=[], ctx=ast.Load()), value
                 ),
-                required=False,
+                required=True,
                 description="",
             ),
         )
@@ -245,7 +233,7 @@ def emit_injector_module(
             ),
             body=[
                 docstring(
-                    "Return what a client calls to supply the injected values, each serialized as its type says."
+                    "Return what `Request.prepare()` calls to supply the injected values, each serialized as its type says."
                 ),
                 ast.Return(
                     value=ast.Call(

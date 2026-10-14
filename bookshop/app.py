@@ -18,18 +18,20 @@ from bookshop.app_graphql import (
     Search,
     SearchData,
 )
-from bookshop.client.runtime import ExecutionError, UnexpectedNullError
-from bookshop.client.schema import Address, BookFilter, OrderStatus
 from bookshop.get_order_graphql import GetOrder, GetOrderData
+from bookshop.graphql.runtime import ExecutionError, UnexpectedNullError, merge
+from bookshop.graphql.schema import Address, BookFilter, OrderStatus
 from bookshop.scalar import ISBN
-from bookshop.transport import Client, SubscriptionClient
+from bookshop.transport import send, subscribe
 
 
-def describe(isbn: ISBN, /, *, client: Client) -> str:
+def describe(isbn: ISBN, /) -> str:
     variables: GetBookVariables = {"lookup": {"isbn": isbn}}
 
+    # Caught only to show what the error carries.
+    # You would usually let the error propagate since a null here is a bug.
     try:
-        data = client(GetBook(variables))
+        data = send(GetBook(variables))
     except UnexpectedNullError as error:
         assert error.path == ["book"]
         assert error.__notes__ == [f"Raised by `GetBook` with variables {variables!r}."]
@@ -46,15 +48,10 @@ def describe(isbn: ISBN, /, *, client: Client) -> str:
     return f"{book['title']}, {by}, costs {book['price']:.2f}."
 
 
-def book_and_similar(
-    isbn: ISBN, text: str, /, *, client: Client
-) -> tuple[str, list[str]]:
-    # Two queries in one call to the transport.
-    book_data, search_data = client(
-        (
-            GetBook({"lookup": {"isbn": isbn}}),
-            Search({"text": text}),
-        )
+def book_and_similar(isbn: ISBN, text: str, /) -> tuple[str, list[str]]:
+    # Two queries in one request.
+    book_data, search_data = send(
+        merge(GetBook({"lookup": {"isbn": isbn}}), Search({"text": text}))
     )
     assert_type(book_data, GetBookData)
     assert_type(search_data, SearchData)
@@ -67,19 +64,21 @@ def book_and_similar(
 
 
 def look_up(
-    isbns: Sequence[ISBN], publication_ids: Sequence[str], /, *, client: Client
+    isbns: Sequence[ISBN], publication_ids: Sequence[str], /
 ) -> tuple[GetBookData | GetPublicationData, ...]:
-    # Any number of queries in one call to the transport.
-    return client(  # ty: ignore[unsound-return-statement]  # Pyright and Pyrefly already infer this.
-        [
-            *(GetBook({"lookup": {"isbn": isbn}}) for isbn in isbns),
-            *(GetPublication({"id": id_}) for id_ in publication_ids),
-        ]
+    # Any number of queries in one request.
+    return send(  # ty: ignore[unsound-return-statement]  # Pyright and Pyrefly already infer this.
+        merge(
+            [
+                *(GetBook({"lookup": {"isbn": isbn}}) for isbn in isbns),
+                *(GetPublication({"id": id_}) for id_ in publication_ids),
+            ]
+        )
     )
 
 
-def run_saved_search(name: str, /, *, client: Client) -> list[str]:
-    data = client(GetSavedSearch({"name": name}))
+def run_saved_search(name: str, /) -> list[str]:
+    data = send(GetSavedSearch({"name": name}))
     search = data["savedSearch"]
 
     if search is None:
@@ -88,12 +87,12 @@ def run_saved_search(name: str, /, *, client: Client) -> list[str]:
     book_filter = search["value"]
     assert_type(book_filter, BookFilter | None)
     # Sent back as is.
-    books = client(ListBooks({"filter": book_filter}))
+    books = send(ListBooks({"filter": book_filter}))
     return [book["title"] for book in books["books"]]
 
 
-def length(publication_id: str, /, *, client: Client) -> str:
-    data = client(GetPublication({"id": publication_id}))
+def length(publication_id: str, /) -> str:
+    data = send(GetPublication({"id": publication_id}))
     publication = data["publication"]
 
     if publication is None:
@@ -120,12 +119,12 @@ def status_label(status: OrderStatus, /) -> str:
         case "CANCELED":
             return "Canceled"
         case _:
-            # A member added after this client was generated.
+            # A member added after codegen.
             return status.replace("_", " ").capitalize()
 
 
-def cheaper_than(limit: Decimal, /, *, client: Client) -> list[str]:
-    data = client(ListBooks({"filter": {"priceBelow": limit}}))
+def cheaper_than(limit: Decimal, /) -> list[str]:
+    data = send(ListBooks({"filter": {"priceBelow": limit}}))
     labels: list[str] = []
 
     for book in data["books"]:
@@ -136,8 +135,8 @@ def cheaper_than(limit: Decimal, /, *, client: Client) -> list[str]:
     return labels
 
 
-def order(book_id: str, address: Address, /, *, client: Client) -> str:
-    data = client(
+def order(book_id: str, address: Address, /) -> str:
+    data = send(
         PlaceOrder(
             {"input": {"lines": [{"book": book_id}], "shippingAddress": address}}
         )
@@ -148,24 +147,8 @@ def order(book_id: str, address: Address, /, *, client: Client) -> str:
     return f"Order {order['id']}: {order['total']:.2f} at {order['placedAt']:%H:%M}."
 
 
-def cancel(order_ids: list[str], /, *, client: Client) -> list[str]:
-    """Cancel the orders in one call to the transport, and explain each failure."""
-    results = client(
-        [
-            CancelOrder({"input": {"order": order_id}}).returning_error()
-            for order_id in order_ids
-        ]
-    )
-    # Each error has a note naming its operation and the variables sent.
-    return [
-        f"{error.__notes__[0]} {error!s}"
-        for error in results
-        if isinstance(error, ExecutionError)
-    ]
-
-
-def track(order_id: str, /, *, client: Client) -> str:
-    result = client(GetOrder({"id": order_id}).returning_error())
+def track(order_id: str, /) -> str:
+    result = send(GetOrder({"id": order_id}).returning_error())
 
     if isinstance(result, ExecutionError):
         data = result.parse_data()
@@ -180,12 +163,27 @@ def track(order_id: str, /, *, client: Client) -> str:
     )
 
 
-def watch(order_id: str, /, *, client: SubscriptionClient) -> list[OrderStatus]:
-    """Follow the order until it is delivered, and return its statuses."""
-    statuses: list[OrderStatus] = []
-    events = client(OnOrderStatusChanged({"orderId": order_id}))
+def cancel(order_ids: list[str], /) -> list[str]:
+    results = send(
+        merge(
+            [
+                CancelOrder({"input": {"order": order_id}}).returning_error()
+                for order_id in order_ids
+            ]
+        )
+    )
+    # Each error has a note naming its operation and the variables sent.
+    return [
+        f"{error.__notes__[0]} {error!s}"
+        for error in results
+        if isinstance(error, ExecutionError)
+    ]
 
-    # Closing the stream, however the loop ends, unsubscribes.
+
+def watch(order_id: str, /) -> list[OrderStatus]:
+    statuses: list[OrderStatus] = []
+    events = subscribe(OnOrderStatusChanged({"orderId": order_id}))
+
     with closing(events):
         for event in events:
             statuses.append(event["orderStatusChanged"]["status"])

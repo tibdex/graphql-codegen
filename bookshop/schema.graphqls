@@ -179,7 +179,7 @@ input BookFilter @oneOf {
 
 input PlaceOrderInput {
   "Makes placing the same order twice harmless: the client sends a new one per order."
-  idempotencyKey: UUID
+  idempotencyKey: UUID!
   lines: [OrderLineInput!]!
   shippingAddress: Address!
   giftWrap: Boolean! = false
@@ -201,7 +201,7 @@ input Address {
 
 input CancelOrderInput {
   "Makes canceling the same order twice harmless."
-  idempotencyKey: UUID
+  idempotencyKey: UUID!
   order: ID!
 }
 

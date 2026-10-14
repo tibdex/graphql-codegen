@@ -1,50 +1,52 @@
 # Copied into each generated package, where this line says not to edit it.
 
+from __future__ import annotations
+
+import re
 from collections.abc import Mapping
 from functools import cached_property
-from json import dumps
+from json import JSONDecodeError, dumps, loads
 from types import MappingProxyType
-from typing import Any, Final, Generic, TypeVar, final, override
+from typing import Any, Final, assert_never, cast, final, override
 
-from ._literal import ExecutionErrorHandling, OperationType
+from ._execution_error_handling import ExecutionErrorHandling
+from ._operation_type import OperationType
 from ._reflection import Convert, build_parser, build_serializer
 from ._sigil import SIGIL
-from .error import ExecutionError
+from .error import Error, ExecutionError, GraphqlError, ProtocolError, RequestError
+from .injection import _Injectors
+from .request import PreparedRequest, Request
 
-_VARIABLES_KEY: Final = ',"variables":'
+# A root field the generator aliased as itself, for the suffix a merge adds.
+_REDUNDANT_ALIAS: Final = re.compile(
+    rf"^(?P<indent> +)(?P<name>\w+){SIGIL}: (?P=name)\b", re.MULTILINE
+)
+
 _NO_INJECTIONS: Final[Mapping[str, frozenset[tuple[str, ...]]]] = MappingProxyType(
     dict[str, frozenset[tuple[str, ...]]]()
 )
 
-# Declared, since PEP 695 infers variance from every method.
-# Covariant, so that an operation of one type, or its request, is also one of any type.
-_Type_co = TypeVar("_Type_co", bound=OperationType, covariant=True)
-# Both held by `variables_type` and taken by `__call__`.
-_Variables = TypeVar("_Variables", bound=Mapping[str, object])
-_Data_co = TypeVar("_Data_co", covariant=True)
-
 
 @final
-class Operation(Generic[_Type_co, _Variables, _Data_co]):
-    """A generated operation, parameterized by its type, what it sends, and what it returns, in the order things happen.
+class Operation[Type: OperationType, Variables: Mapping[str, object], Data]:
+    """A generated operation, typed by its operation type, its variables, and its data.
 
-    Its type is a parameter, so that clients tell operation types apart statically: a subscription client takes subscriptions only, and a merge takes operations of one type.
+    The operation type is a type parameter, so a transport can take subscriptions only, and a merge operations of one type.
     """
 
     def __init__(
         self,
         *,
-        operation_type: _Type_co,
+        operation_type: Type,
         name: str,
         document: str,
-        variables_type: type[_Variables],
+        variables_type: type[Variables],
         injections: Mapping[str, frozenset[tuple[str, ...]]] = _NO_INJECTIONS,
-        data_type: type[_Data_co],
+        data_type: type[Data],
     ) -> None:
-        """*document* has the merge sigil wherever its index in a merge goes, and *injections* the path of every object receiving each injector's value, by injector name, `()` being the variables themselves.
+        """*injections* maps each injector's name to the paths of the objects receiving its value, `()` being the variables themselves.
 
-        The key an injection writes is the injector's name, which the variables' type lacks, so that callers cannot pass it.
-        What crosses the wire is read off *variables_type* and *data_type* at runtime: they are the only description of it.
+        What crosses the wire is read off *variables_type* and *data_type* at runtime.
         """
         self._operation_type: Final = operation_type
         self._name: Final = name
@@ -53,23 +55,23 @@ class Operation(Generic[_Type_co, _Variables, _Data_co]):
         self._injections: Final = injections
         self._data_type: Final = data_type
 
-    def __call__(self, variables: _Variables, /) -> "Request[_Type_co, _Data_co]":
-        """Return the request running this operation with *variables*, checked here, before anything runs.
+    def __call__(self, variables: Variables, /) -> _OperationRequest[Type, Data]:
+        """Return the request of this operation with *variables*.
 
-        Their type is already bound here, so every type checker checks them exactly, whereas from a function taking both an operation and its variables, some type checkers would infer a wider type.
+        A method rather than a function taking both, so every type checker checks the variables against their exact type.
         """
-        return Request(operation=self, variables=variables, on_execution_error="raise")
+        return _OperationRequest(
+            operation=self, variables=variables, on_execution_error="raise"
+        )
 
     @override
     def __repr__(self) -> str:
-        # The operation, rather than its document.
         return (
             f"Operation(operation_type={self._operation_type!r}, name={self._name!r})"
         )
 
     @cached_property
     def _data_parser(self) -> Convert | None:
-        """Only custom scalars with a codec and `@nonNull` fields cost anything at runtime."""
         return build_parser(self._data_type, partial=False)
 
     @cached_property
@@ -82,11 +84,12 @@ class Operation(Generic[_Type_co, _Variables, _Data_co]):
 
     @cached_property
     def _request_prefix(self) -> bytes:
-        """Serialized once, since the document's string escaping costs as much as the document is long."""
-        envelope = dumps(
-            {"operationName": self._name, "query": self._document.replace(SIGIL, "")}
+        # Escaping the document costs as much as it is long, so it is done once.
+        document = _REDUNDANT_ALIAS.sub(r"\g<indent>\g<name>", self._document).replace(
+            SIGIL, ""
         )
-        return (envelope[:-1] + _VARIABLES_KEY).encode()
+        envelope = dumps({"operationName": self._name, "query": document})
+        return f'{envelope[:-1]},"variables":'.encode()
 
     def _request_body(self, variables: Mapping[str, object], /) -> bytes:
         # `json.dumps()`'s default separators are what make the concatenation valid JSON.
@@ -94,22 +97,16 @@ class Operation(Generic[_Type_co, _Variables, _Data_co]):
 
 
 @final
-class Request(Generic[_Type_co, _Data_co]):
-    """An operation with the variable values its caller gives, not yet those the client injects, as a :class:`requests.Request` does not yet hold the headers its session adds.
-
-    It runs nothing: `ListBooks({"first": 10})` is a value that a client runs, synchronously or not.
-    """
-
-    __slots__ = ("_on_execution_error", "_operation", "_variables")
-
+class _OperationRequest[Type: OperationType, Data](Request[Type, Data]):
     def __init__(
         self,
         *,
-        # The variables' type has served its purpose once they are checked.
-        operation: Operation[_Type_co, Any, _Data_co],
+        # `Any`: `Operation.__call__` already checked the variables.
+        operation: Operation[Type, Any, Data],
         variables: Mapping[str, object],
         on_execution_error: ExecutionErrorHandling,
     ) -> None:
+        super().__init__(operation_type=operation._operation_type)
         self._operation: Final = operation
         self._variables: Final = variables
         self._on_execution_error: Final = on_execution_error
@@ -120,16 +117,119 @@ class Request(Generic[_Type_co, _Data_co]):
 
     def returning_error(
         self,
-    ) -> "Request[_Type_co, _Data_co | ExecutionError[_Data_co]]":
-        """Return a copy of this request whose :class:`~.error.ExecutionError` a client returns in place of its data instead of raising it.
-
-        The returned error is typed by the request, and so is its :meth:`~.error.ExecutionError.parse_data`, which no `except` clause can express; a caller tells it apart from the data before use.
-        Every other error still raises, since it means that the request as a whole failed.
-
-        """
-        # A request's data type being covariant, one returning its data is one returning its data or its error.
-        return Request(
+    ) -> _OperationRequest[Type, Data | ExecutionError[Data]]:
+        """Return a copy of this request for which `PreparedRequest.parse()` returns its `ExecutionError` instead of raising it."""
+        # Sound since `Data` is covariant: a request returning its data is one returning its data or its error.
+        return _OperationRequest(
             operation=self._operation,
             variables=self._variables,
             on_execution_error="return",
         )
+
+    @override
+    def prepare(self, *, injectors: _Injectors | None = None) -> PreparedRequest[Data]:
+        operation = self._operation
+        variables = _resolve_variables(operation, self._variables, injectors=injectors)
+        on_execution_error = self._on_execution_error
+
+        def parse(raw: bytes, /) -> Data:
+            try:
+                return _parse_data(operation, raw)
+            except Error as error:
+                error.add_note(_origin_note(operation._name, variables))
+
+                if isinstance(error, ExecutionError):
+                    match on_execution_error:
+                        case "raise":
+                            pass
+                        case "return":
+                            # `Data` includes the error: see `returning_error()`.
+                            return cast(Data, error)
+                        case _ as never:
+                            assert_never(never)
+
+                raise
+
+        return PreparedRequest(operation._request_body(variables), parse=parse)
+
+
+def _resolve_variables(
+    operation: Operation[OperationType, Any, object],
+    variables: Mapping[str, object],
+    /,
+    *,
+    injectors: _Injectors | None = None,
+) -> Mapping[str, object]:
+    serialize = operation._variables_serializer
+    values = (
+        variables
+        if serialize is None
+        else cast(Mapping[str, object], serialize(variables))
+    )
+
+    if injectors is not None:
+        return injectors._inject(values, injections=operation._injections)
+
+    # A runtime check, since a request's type does not say what it injects.
+    if operation._injections:
+        raise ValueError(
+            f"Cannot prepare `{operation._name}` without injectors: it injects {', '.join(sorted(operation._injections))}."
+        )
+
+    return values
+
+
+def _parse_data[Data](
+    operation: Operation[OperationType, Any, Data], raw: bytes, /
+) -> Data:
+    data = _parse_response(raw, partial_data_parser=operation._partial_data_parser)
+
+    if operation._data_parser is not None:
+        operation._data_parser(data)
+
+    return cast(Data, data)
+
+
+def _parse_response(
+    raw: bytes, /, *, partial_data_parser: Convert | None
+) -> Mapping[str, object]:
+    try:
+        payload = loads(raw)
+    except JSONDecodeError as error:
+        raise ProtocolError(
+            f"Expected a JSON response but got: {raw[:200]!r}."
+        ) from error
+
+    if not isinstance(payload, dict):
+        raise ProtocolError(f"Expected a JSON object response but got: {raw[:200]!r}.")
+
+    errors = payload.get("errors")
+
+    if errors:
+        formatted = cast(list[GraphqlError], errors)
+        extensions = payload.get("extensions")
+
+        # The spec's request error result has no `data` entry at all.
+        if "data" not in payload:
+            raise RequestError(formatted, extensions=extensions)
+
+        raise ExecutionError(
+            formatted,
+            data=payload["data"],
+            extensions=extensions,
+            partial_data_parser=partial_data_parser,
+        )
+
+    data = payload.get("data")
+
+    if not isinstance(data, dict):
+        raise ProtocolError(
+            f"Expected the response to carry `data` but got: {raw[:200]!r}."
+        )
+
+    return cast(Mapping[str, object], data)
+
+
+def _origin_note(operation_name: str, variables: Mapping[str, object], /) -> str:
+    # `repr()`, so a `str` subclass redacting its own keeps a secret out of logs.
+    return f"Raised by `{operation_name}` with variables {variables!r}."

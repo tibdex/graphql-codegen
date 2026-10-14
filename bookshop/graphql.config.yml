@@ -6,11 +6,11 @@ extensions:
   pythonCodegen:
     # Where imports start, relative to this file's directory.
     moduleRoot: ..
-    # Dotted name from the module root, so written to `bookshop/client`.
-    package: bookshop.client
+    # Dotted name from the module root, so written to `bookshop/graphql`.
+    package: bookshop.graphql
     # Name pattern of each document's module, written next to the document.
     documentSiblingModule: "{document}_graphql"
-    # Values the client injects, which no call can pass.
+    # Values an injector supplies, which no call can pass.
     injectorNames: [idempotencyKey]
     # Client directive asserting a schema-nullable field is not null.
     nonNullDirectiveName: nonNull

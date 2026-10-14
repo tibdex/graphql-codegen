@@ -12,7 +12,7 @@ from graphql_codegen._cli._parsing import (
     parse_string,
     required,
 )
-from graphql_codegen._note import error_note
+from graphql_codegen._error_note import error_note
 
 
 @final
@@ -34,8 +34,8 @@ class Endpoint:
     headers: Mapping[str, str]
 
 
+# The forms https://the-guild.dev/graphql/config/docs/user/schema lists.
 type SchemaPointer = Globs | IntrospectionResult | Endpoint
-"""Where a project's schema comes from, in one of the forms https://the-guild.dev/graphql/config/docs/user/schema lists."""
 
 
 def parse_schema_pointer(value: object, /) -> SchemaPointer:
@@ -55,7 +55,6 @@ def parse_schema_pointer(value: object, /) -> SchemaPointer:
                             f"Expected a glob of SDL files, since the list holds more than one item, but got `{item}`."
                         )
 
-                # A single item is one glob.
                 (pattern,) = pointer.patterns
                 patterns.append(pattern)
 

@@ -1,27 +1,27 @@
-"""The bookshop's synchronous transports (using the standard library alone)."""
+"""The bookshop's synchronous IO, with the standard library alone."""
 
 from collections.abc import Generator
 from http.client import HTTPResponse
-from typing import Protocol, TypeAlias
+from typing import Final, Literal
 from urllib.error import HTTPError
-from urllib.request import Request, urlopen
+from urllib.request import Request as HTTPRequest, urlopen
+from uuid import uuid4
 
-from bookshop import mime_type
-from bookshop.client.runtime import (
-    Client as _Client,
-    SubscriptionClient as _SubscriptionClient,
-)
+from bookshop.graphql.injection import injectors
+from bookshop.graphql.runtime import Request
 
-BASE_URL = "https://bookshop.example"
+BASE_URL: Final = "https://bookshop.example"
+INJECTORS: Final = injectors({"idempotencyKey": uuid4})
+ATTEMPTS: Final = 3
 
 
 def _post(
     path: str, body: bytes, /, *, accept: str, timeout: float | None
 ) -> HTTPResponse:
-    request = Request(  # noqa: S310
+    request = HTTPRequest(  # noqa: S310
         BASE_URL + path,
+        headers={"Accept": accept, "Content-Type": "application/json"},
         data=body,
-        headers={"Accept": accept, "Content-Type": mime_type.JSON},
     )
 
     response = urlopen(request, timeout=timeout)  # noqa: S310
@@ -30,49 +30,55 @@ def _post(
     return response
 
 
-def transport(body: bytes, /, *, timeout: float | None = None) -> bytes:
-    retries = 2
+def send[Data](
+    request: Request[Literal["query", "mutation"], Data],
+    /,
+    *,
+    timeout: float | None = None,
+) -> Data:
+    prepared = request.prepare(injectors=INJECTORS)
+    # Built once, so that a retry sends the same idempotency key.
+    request_body = bytes(prepared)
+    attempts_left = ATTEMPTS
 
+    # A connection per call keeps the example simple: an HTTP library, such as httpx2 in `async_transport.py`, would pool them.
     while True:
         try:
             response = _post(
-                "/graphql", body, accept=mime_type.GRAPHQL_RESPONSE, timeout=timeout
+                "/graphql",
+                request_body,
+                accept="application/graphql-response+json",
+                timeout=timeout,
             )
         except HTTPError as error:
             # GraphQL over HTTP sends a request error as a response with a 4xx status.
-            if error.headers.get_content_type() != mime_type.GRAPHQL_RESPONSE:
+            if error.headers.get_content_type() != "application/graphql-response+json":
                 raise
 
             response = error
         except ConnectionError:
-            # The response was lost.
-            if not retries:
+            attempts_left -= 1
+
+            if not attempts_left:
                 raise
 
-            retries -= 1
             continue
 
         with response:
-            return response.read()
+            response_body = response.read()
+
+        return prepared.parse(response_body)
 
 
-class Transport(Protocol):
-    def __call__(self, body: bytes, /, *, timeout: float | None = None) -> bytes: ...
+def subscribe[Data](
+    request: Request[Literal["subscription"], Data], /
+) -> Generator[Data, None, None]:
+    prepared = request.prepare(injectors=INJECTORS)
+    request_body = bytes(prepared)
 
-
-# Keeps the protocol in sync.
-_transport: Transport = transport
-
-
-# Not a `type` statement, which could not be called to build a client.
-Client: TypeAlias = _Client[Transport]  # noqa: UP040
-
-
-def subscription_transport(body: bytes, /) -> Generator[bytes, None, None]:
-    """Yield the data of each `next` event, following the GraphQL over Server-Sent Events protocol."""
-    # Closing the generator leaves the block, which closes the connection: that is how to unsubscribe.
+    # Closing the generator leaves the block, closes the connection, and ends the subscription.
     with _post(
-        "/graphql", body, accept=mime_type.EVENT_STREAM, timeout=None
+        "/graphql", request_body, accept="text/event-stream", timeout=None
     ) as response:
         event = ""
         data: list[str] = []
@@ -86,7 +92,7 @@ def subscription_transport(body: bytes, /) -> Generator[bytes, None, None]:
                     return
 
                 if event == "next":
-                    yield "\n".join(data).encode()
+                    yield prepared.parse("\n".join(data).encode())
 
                 event = ""
                 data = []
@@ -99,13 +105,3 @@ def subscription_transport(body: bytes, /) -> Generator[bytes, None, None]:
                 event = value
             elif field == "data":
                 data.append(value)
-
-
-class SubscriptionTransport(Protocol):
-    def __call__(self, body: bytes, /) -> Generator[bytes, None, None]: ...
-
-
-# Keeps the protocol in sync.
-_subscription_transport: SubscriptionTransport = subscription_transport
-
-SubscriptionClient: TypeAlias = _SubscriptionClient[SubscriptionTransport]  # noqa: UP040

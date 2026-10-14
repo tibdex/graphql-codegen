@@ -7,16 +7,46 @@ from typing import Final, Generic, NotRequired, Required, cast, final, override
 from ._compat import TypedDict, TypeVar
 
 
+class Error(Exception):
+    """The base of every error the generated package raises.
+
+    Your transport's own errors, such as a timeout or an HTTP status, are not among them.
+    """
+
+
+@final
+class ProtocolError(Error):
+    """The response was not a GraphQL response, such as an HTML error page from a proxy."""
+
+
+@final
+class UnexpectedNullError(Error):
+    """A field marked `@nonNull` was null.
+
+    `path` names the exact value, list indices included.
+    """
+
+    def __init__(self, path: list[str | int], /) -> None:
+        self.path: Final = path
+        super().__init__()
+
+    @override
+    def __str__(self) -> str:
+        formatted = "".join(
+            f"[{segment}]" if isinstance(segment, int) else f".{segment}"
+            for segment in self.path
+        ).removeprefix(".")
+        return f"Expected `{formatted}` to not be null."
+
+
 class Location(TypedDict):
     line: Required[int]
     column: Required[int]
 
 
-class Error(TypedDict):
-    """An error as a server sends it, in the spec's shape, which graphql-core's :class:`~graphql.GraphQLFormattedError` follows too.
-
-    Not graphql-core's :class:`~graphql.GraphQLError`, because four of its eight attributes (:attr:`~graphql.GraphQLError.nodes`, :attr:`~graphql.GraphQLError.source`, :attr:`~graphql.GraphQLError.positions`, and :attr:`~graphql.GraphQLError.original_error`) are server-side execution state a client cannot fill, and importing it would put graphql-core in the runtime for nothing.
-    """
+# Not graphql-core's `GraphQLError`: half of its attributes are server-side state, and importing it would make the generated package depend on graphql-core.
+class GraphqlError(TypedDict):
+    """An error as the server sends it, in the spec's shape."""
 
     message: Required[str]
     locations: NotRequired[Sequence[Location]]
@@ -24,23 +54,15 @@ class Error(TypedDict):
     extensions: NotRequired[object]
 
 
-class ClientError(Exception):
-    """Base of every error a generated client raises.
-
-    A transport's own errors, such as a timeout or an HTTP status, pass through as they are: the client does not know what carries its requests.
-    Not :func:`typing.final`: it exists so a caller can catch anything this library raises with one `except`.
-    """
-
-
-class ResponseError(ClientError):
-    """The response carried errors, in either of the two shapes the spec gives such a response.
-
-    A response carrying any error raises, so that the data a client returns never holds a `null` standing for an error.
-    Not :func:`typing.final`: it exists so a caller can catch both shapes with one `except`.
-    """
+class ResponseError(Error):
+    """Raised for any error, even with data beside it: a field that failed is `null` there, which looks like a null field."""
 
     def __init__(
-        self, errors: Sequence[Error], /, *, extensions: Mapping[str, object] | None
+        self,
+        errors: Sequence[GraphqlError],
+        /,
+        *,
+        extensions: Mapping[str, object] | None,
     ) -> None:
         assert errors, "Cannot raise without at least one error."
         self.errors: Final = tuple(errors)
@@ -50,13 +72,10 @@ class ResponseError(ClientError):
 
 @final
 class RequestError(ResponseError):
-    """The response is the spec's request error result: the request failed before execution, so it has no data.
-
-    A syntax error, a validation failure, or an invalid variable value, for instance.
-    """
+    """The request failed before execution, so the response has no data."""
 
 
-# The type of an execution error's parsed data: the operation's data type when a client returns the error, typed by its request, and a plain mapping when `except` catches it, since that names no operation.
+# The default types what `except` catches, which names no operation: `Mapping[str, object]`.
 # A legacy `TypeVar`, since a default for a PEP 695 type parameter needs Python 3.13.
 _Data_co = TypeVar("_Data_co", covariant=True, default=Mapping[str, object])
 
@@ -71,7 +90,7 @@ class ExecutionError(ResponseError, Generic[_Data_co]):
     data: Final[Mapping[str, object] | None]
 
     def parse_data(self) -> _Data_co | None:
-        """Return the data converted as in a response without errors, in a fresh copy.
+        """Return a fresh copy of the data, converted as in a response without errors.
 
         A `@nonNull` field that raised moves its `null` up to its nearest nullable parent, as the server does for a non-null field.
         A custom scalar's codec may raise on a value it cannot decode.
@@ -87,12 +106,11 @@ class ExecutionError(ResponseError, Generic[_Data_co]):
             except UnexpectedNullError:
                 return None
 
-        # Nothing is validated: the data is trusted to match its type, as in a response without errors.
         return cast(_Data_co, data)
 
     def __init__(
         self,
-        errors: Sequence[Error],
+        errors: Sequence[GraphqlError],
         /,
         *,
         data: Mapping[str, object] | None,
@@ -102,34 +120,3 @@ class ExecutionError(ResponseError, Generic[_Data_co]):
         super().__init__(errors, extensions=extensions)
         self.data = data
         self._partial_data_parser: Final = partial_data_parser
-
-
-@final
-class ProtocolError(ClientError):
-    """The response was not a GraphQL response.
-
-    Usually an HTML error page from a proxy.
-    Without this the caller would get a bare :exc:`json.JSONDecodeError` from somewhere inside the client.
-    """
-
-
-@final
-class UnexpectedNullError(ClientError):
-    """A field marked `@nonNull` was null.
-
-    The schema declares the field nullable, so only the client can assert otherwise.
-
-    The path names the exact value, list indices included: it is completed on the way up by each enclosing object and list, which costs nothing unless the error is raised.
-    """
-
-    def __init__(self, path: list[str | int], /) -> None:
-        self.path: Final = path
-        super().__init__()
-
-    @override
-    def __str__(self) -> str:
-        formatted = "".join(
-            f"[{segment}]" if isinstance(segment, int) else f".{segment}"
-            for segment in self.path
-        ).removeprefix(".")
-        return f"Expected `{formatted}` to not be null."

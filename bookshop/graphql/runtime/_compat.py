@@ -2,7 +2,7 @@
 
 import sys
 
-# Closed TypedDicts (PEP 728) and sentinels (PEP 661) are the last to reach the standard library.
+# PEP 728 closed TypedDicts and PEP 661 sentinels reach the standard library in Python 3.15.
 if sys.version_info >= (3, 15):
     from typing import (
         ReadOnly as ReadOnly,

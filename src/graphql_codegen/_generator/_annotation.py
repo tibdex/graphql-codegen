@@ -35,7 +35,7 @@ from graphql_codegen._generator._naming import (
 )
 from graphql_codegen._generator.spelling import SettledSpelling
 
-# A project may still configure them like custom ones.
+# A config may override them.
 BUILT_IN_SCALARS: Final[Mapping[str, str]] = {
     GraphQLBoolean.name: "bool",
     GraphQLFloat.name: "float",
@@ -46,11 +46,7 @@ BUILT_IN_SCALARS: Final[Mapping[str, str]] = {
 
 
 type Position = Literal["input", "data"]
-"""Where a value of the type is.
-
-- ``"input"``: sent to the server, as a variable or an input object's field, where a list is a :class:`collections.abc.Sequence`, so that a caller may pass a tuple.
-- ``"data"``: received from the server, in a response's data, where a list is a :class:`list`, since that is what :func:`json.loads` produces.
-"""
+"""An input list is a `Sequence`, so that a caller may pass a tuple, and a data list is a `list`, as `json.loads()` produces."""
 
 
 def builtin(type_name: str, /) -> ast.expr:
@@ -77,7 +73,6 @@ class AnnotationBuilder:
         object_annotation: ast.expr | None,
         bare_inputs: bool,
     ) -> ast.expr:
-        """*object_annotation* names a composite type, since it depends on the selection rather than on the schema."""
         if isinstance(type_, GraphQLNonNull):
             return self._build_non_null(
                 type_.of_type,
@@ -124,7 +119,7 @@ class AnnotationBuilder:
             case GraphQLScalarType():
                 return self._scalar_annotation(type_.name)
             case GraphQLEnumType() if is_introspection_type(type_):
-                # Not a type of the schema, so not in its package: spelled where it is selected.
+                # An introspection enum is not in the package, so it is spelled inline.
                 return subscript(
                     qualified(TYPING, "Literal"),
                     *(constant(value_name) for value_name in type_.values),
@@ -132,7 +127,6 @@ class AnnotationBuilder:
             case GraphQLEnumType():
                 return qualified(ENUM, self._type_spellings[type_.name])
             case GraphQLInputObjectType():
-                # Unquoted even though input types reference each other in cycles: generated modules postpone the evaluation of annotations.
                 spelling = self._type_spellings[type_.name]
                 return name(spelling) if bare_inputs else qualified(INPUT, spelling)
             case _:
@@ -145,5 +139,4 @@ class AnnotationBuilder:
         if scalar_name in self._scalar_spellings:
             return qualified(SCALAR, self._scalar_spellings[scalar_name])
 
-        # An unconfigured custom scalar stays opaque rather than silently becoming `str`: the wire value is whatever JSON the server sent.
         return builtin(BUILT_IN_SCALARS.get(scalar_name, "object"))

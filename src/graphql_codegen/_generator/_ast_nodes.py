@@ -16,10 +16,7 @@ def name(spelling: Spelling, /) -> ast.Name:
 
 
 def qualified(module_alias: Spelling, attribute: str, /) -> ast.Attribute:
-    """`_alias.attribute`: how a generated module refers to anything it did not declare.
-
-    Qualifying every such reference, builtins included, is what keeps a generated name from ever shadowing one the module uses: an operation called `str` cannot hide `_builtins.str`.
-    """
+    """Every name the module did not declare is qualified, builtins included, so that an operation named `str` cannot hide `_builtins.str`."""
     return ast.Attribute(value=name(module_alias), attr=attribute, ctx=ast.Load())
 
 
@@ -36,11 +33,9 @@ FUTURE_ANNOTATIONS: Final = ast.ImportFrom(
     names=[ast.alias(name="annotations")],
     level=0,
 )
-"""Emitted by the input module, whose types reference each other in cycles, such as a filter combining filters, so that annotations need no quoting.
+"""Input types reference each other in cycles, so the input module postpones its annotations instead of quoting them.
 
-The cost: under PEP 563, a TypedDict's :attr:`~typing.TypedDict.__required_keys__` is computed from unresolved strings and reports every key as required.
-Nothing here reads it, since nothing is validated at runtime, and type checkers, which read the source, are unaffected.
-Code introspecting these types at runtime must use :func:`typing.get_type_hints` rather than the class attributes.
+Under PEP 563, a TypedDict's `__required_keys__` then reports every key as required: read these types with `typing.get_type_hints()`.
 """
 
 
@@ -66,7 +61,7 @@ def optional(annotation: ast.expr, /) -> ast.expr:
 
 
 def type_alias(target: Spelling, value: ast.expr, /) -> ast.TypeAlias:
-    """Preferred over `X: TypeAlias = ...`, since a PEP 695 alias evaluates its value lazily, so it may name types declared after it."""
+    """A `type` statement evaluates lazily, so it may name a type declared after it."""
     return ast.TypeAlias(
         name=ast.Name(id=ast_str(target), ctx=ast.Store()),
         type_params=[],
@@ -75,12 +70,12 @@ def type_alias(target: Spelling, value: ast.expr, /) -> ast.TypeAlias:
 
 
 def documented(statement: ast.stmt, /, *, text: str) -> list[ast.stmt]:
-    """A `type` statement and an annotated attribute have no docstring slot in the grammar, but tooling widely understands a bare string literal directly underneath."""
+    """A `type` statement and an annotated attribute have no docstring, but tooling reads a bare string right below them."""
     return [statement, docstring(text)] if text else [statement]
 
 
 def docstring(text: str, /) -> ast.Expr:
-    """A docstring holding *text*: :func:`ast.unparse` drops comments, so whatever the generated code tells its reader must be a docstring, which is a real node."""
+    """`ast.unparse()` drops comments, so a docstring is the only text that reaches the generated code."""
     return ast.Expr(value=constant(text))
 
 
@@ -121,10 +116,6 @@ def relative_import_from(
     level: int,
     re_export: bool,
 ) -> ast.ImportFrom:
-    """When *re_export* is ``True``, each name is aliased to itself, as in `from .X import X as X`, which is how PEP 484 marks an explicit re-export.
-
-    Otherwise, a type checker treats the import as private to the module and rejects importing it from the package.
-    """
     return ast.ImportFrom(
         module=module,
         names=[
@@ -151,7 +142,7 @@ def _string_literal(value: str, /, *, quotes: Sequence[str]) -> str:
     if not usable:
         return repr(value)
 
-    # A quote ending like the value would need that last character escaped.
+    # Prefer a quote the value does not end with.
     quote = min(usable, key=lambda quote: escaped.endswith(quote[0]))
 
     if escaped.endswith(quote[0]):
@@ -161,15 +152,10 @@ def _string_literal(value: str, /, *, quotes: Sequence[str]) -> str:
 
 
 def _triple_quote(source: str, /) -> str:
-    """Respell with triple quotes the bare strings, which document the statement above them, and the strings spanning lines.
+    """`ast.unparse()` only triple quotes docstrings: elsewhere, a GraphQL document would become one line with escaped newlines.
 
-    :func:`ast.unparse` only does this in docstring position; everywhere else a newline becomes a backslash-n inside a single line literal.
-    GraphQL documents are the only multi-line strings this library emits, and a triple quoted literal keeps them readable.
-
-    The continuation lines of a bare string are indented to match, as a hand written docstring would be.
-    That adds leading whitespace to the value, which is what :func:`inspect.cleandoc` exists to remove and what every tool rendering a docstring already does.
+    A bare string's continuation lines are indented like a handwritten docstring, which `inspect.cleandoc()` undoes.
     """
-    # Split as the tokenizer reads it.
     line_starts = list(accumulate(map(len, StringIO(source)), initial=0))
     pieces: list[str] = []
     end = 0
@@ -181,9 +167,8 @@ def _triple_quote(source: str, /) -> str:
         value = literal_eval(token.string)
         row, column = token.start
 
-        # A docstring too, which `ast.unparse()` quotes but leaves unindented.
+        # A bare string statement, which `ast.unparse()` leaves unindented.
         if following.type == NEWLINE and not token.line[:column].strip():
-            # Every line but the first, which follows the opening quotes.
             margin = " " * column
             literal = _string_literal(
                 indent(value, margin).removeprefix(margin), quotes=['"""']
@@ -201,13 +186,9 @@ def _triple_quote(source: str, /) -> str:
 
 
 def unparse(tree: ast.Module, /) -> str:
-    """Checked to compile, so that a bad node fails here rather than downstream.
+    """Generated code is built as a tree, never from strings.
 
-    Generated code is always built as a tree and unparsed, never assembled from strings, which can be syntactically wrong and need forward references quoted by hand.
-    :func:`ast.unparse` has no formatting options, such as line wrapping or blank lines, and the standard library has no formatter.
-    Unparsing each top-level statement separately and grouping them still gives imports as a block and one blank line between declarations.
-    Wrapping long lines is left to whatever formatter the consuming project runs; this library depends on none.
-
+    The standard library has no formatter, so long lines are left to the project's own.
     """
     ast.fix_missing_locations(tree)
 
@@ -218,7 +199,7 @@ def unparse(tree: ast.Module, /) -> str:
         is_import = isinstance(statement, ast.Import | ast.ImportFrom)
         chunk = ast.unparse(statement)
 
-        # A bare string documents the statement above it, so it must stay glued to it.
+        # A bare string stays glued to the statement it documents.
         is_docstring = isinstance(statement, ast.Expr) and isinstance(
             statement.value,
             ast.Constant,

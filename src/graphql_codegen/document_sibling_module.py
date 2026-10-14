@@ -9,25 +9,24 @@ from graphql_codegen.package_location import PackageLocation
 @final
 @dataclass(frozen=True, kw_only=True)
 class DocumentSiblingModule:
-    """The module holding a document's operations and fragments, in the document's directory.
+    """The module holding a document's operations and fragments, next to the document.
 
-    The schema types they reference deliberately stay in the generated package, so that their import paths never depend on which documents use them.
-    A fragment spread from another document is imported from its own document's module.
+    The schema types stay in the generated package, so that their import paths do not depend on which documents use them.
+    A fragment spread from another document is imported from that document's module.
     """
 
     name: str
-    """Its name, such as ``_{document}_gql``, in which ``{document}`` is the document's file stem, the whole then settled as a module name."""
+    """Its name, with `{document}` standing for the document's file stem, such as `_{document}_gql`."""
 
     package_location: PackageLocation
-    """Where the package lives, which the module imports it from."""
+    """Where the generated package is, for the module to import it."""
 
     def __post_init__(self) -> None:
-        # Parsed eagerly, so that no sibling module holds a name it cannot use.
+        # Fail on a bad name now, not at first use.
         _ = self._affixes
 
     @cached_property
     def _affixes(self) -> tuple[str, str]:
-        """What the name puts ``(before, after)`` ``{document}``."""
         before, placeholder, after = self.name.partition("{document}")
 
         if (
@@ -42,10 +41,6 @@ class DocumentSiblingModule:
         return before, after
 
     def _module_name(self, document: PurePosixPath, /) -> str:
-        """The name of *document*'s module, before it is settled as a module name.
-
-        An underscore the name puts next to ``{document}`` merges with the stem's own.
-        """
         before, after = self._affixes
         stem = document.stem
 

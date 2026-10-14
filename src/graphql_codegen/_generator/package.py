@@ -94,7 +94,6 @@ _GENERATED_FILE_COMMENT: Final = f"{GENERATED_FILE_COMMENT_PREFIX}. {_DO_NOT_EDI
 
 
 def _generated(source: str, /) -> str:
-    """*source* under the generated file comment, separated by a blank line unless it is empty."""
     return (
         f"{_GENERATED_FILE_COMMENT}\n{source}"
         if source.strip()
@@ -108,14 +107,10 @@ def _names_by_document(
     *,
     module_root: PurePosixPath | None,
 ) -> dict[PurePosixPath, list[str]]:
-    """A document is the path its source is named by.
-
-    When *module_root*, where sibling modules are imported from, is not ``None``, every definition must be located in its terms: that is where its module goes.
-    """
     names: dict[PurePosixPath, list[str]] = {}
 
     for definition_name, definition in definitions.items():
-        # graphql-core names a string parsed without a source so too.
+        # graphql-core's name for a string parsed without a source.
         document = PurePosixPath(
             "GraphQL request" if definition.loc is None else definition.loc.source.name
         )
@@ -134,7 +129,7 @@ def _names_by_document(
 
 
 def _import_module(dotted_name: str, /, *, alias: PendingSpelling) -> ast.stmt:
-    """Import the module *dotted_name* from its package, which a submodule named like the package cannot shadow, as `import a.b.c as alias` lets `a`'s attribute `b` do."""
+    """`from a.b import c`, since `import a.b.c as alias` would let a submodule named like the package shadow it."""
     package, _, module_name = dotted_name.rpartition(".")
     return (
         ast.ImportFrom(
@@ -163,7 +158,7 @@ def _direct_spread_names(node: Node, /) -> set[str]:
 def _dotted_module_name(
     path: PurePosixPath, /, *, document: PurePosixPath, module_root: PurePosixPath
 ) -> str:
-    # Outside the module root, a module's path walks up with `..`, which no dotted name holds.
+    # Outside the module root, the path holds `..`, which no dotted name can.
     parts = path.with_suffix("").relative_to(module_root, walk_up=True).parts
 
     if all(is_bindable(part) for part in parts):
@@ -177,7 +172,7 @@ def _dotted_module_name(
 _RUNTIME_MARKER: Final = (
     b"# Copied into each generated package, where this line says not to edit it.\n"
 )
-"""The first line of every runtime module, which the copy swaps for the generated file comment."""
+"""The first line of every runtime module, swapped for the generated file comment."""
 
 
 def _runtime_copy(source: bytes, /) -> bytes:
@@ -199,10 +194,7 @@ _RUNTIME_FILES: Final = MappingProxyType(
         if resource.name.endswith(".py")
     }
 )
-"""The runtime, copied so that a generated package depends on nothing but the standard library, and :mod:`typing_extensions` before Python 3.15.
-
-Read once, at import, so that generating reads no file.
-"""
+"""Read at import, so that `generate()` reads no file."""
 
 
 @final
@@ -210,7 +202,7 @@ class PackageEmitter:
     def __init__(
         self, *, document: DocumentNode, schema: GraphQLSchema, config: Config
     ) -> None:
-        """Derive what can fail, so that no emitter holds what it cannot generate from, leaving the rest to first use."""
+        """Everything that can fail is derived here, and the rest on first use."""
         schema = prepare_schema(
             schema, non_null_directive_name=config.non_null_directive_name
         )
@@ -241,7 +233,7 @@ class PackageEmitter:
         modules = document_modules(
             sorted({*operation_names, *fragment_names}), sibling_module=sibling_module
         )
-        # The `document` package re-exports every operation and fragment beside its modules, which keep their names, then the operations theirs.
+        # The `document` package re-exports operations beside its modules, which keep their names.
         module_spellings = (
             {SettledSpelling(path.stem) for path in modules.values()}
             if sibling_module is None
@@ -277,29 +269,38 @@ class PackageEmitter:
         self._fragment_documents: Final = fragment_documents
         self._document_modules: Final = modules
         self._imported_module_dotted_names: Final = (
-            {}
-            if module_root is None
-            else {
-                spread_document: _dotted_module_name(
-                    modules[spread_document],
-                    document=spread_document,
-                    module_root=module_root,
-                )
-                for definitions, names in (
-                    (operations, operation_names),
-                    (fragments, fragment_names),
-                )
-                for definition_document, definition_names in names.items()
-                for definition_name in definition_names
-                for spread_name in _direct_spread_names(definitions[definition_name])
-                if (spread_document := fragment_documents[spread_name])
-                != definition_document
-            }
+            {} if module_root is None else self._spread_module_names(module_root)
         )
         self._injections: Final = injections
         self._injected_types: Final = get_injected_types(
             injections, injector_names=injector_names
         )
+
+    def _spread_module_names(
+        self, module_root: PurePosixPath, /
+    ) -> dict[PurePosixPath, str]:
+        """The dotted name of each module a document spreads a fragment from."""
+        dotted_names: dict[PurePosixPath, str] = {}
+
+        for definitions, names_by_document in (
+            (self._operations, self._operation_names_by_document),
+            (self._fragments, self._fragment_names_by_document),
+        ):
+            for document, definition_names in names_by_document.items():
+                for definition_name in definition_names:
+                    for spread_name in _direct_spread_names(
+                        definitions[definition_name]
+                    ):
+                        spread_document = self._fragment_documents[spread_name]
+
+                        if spread_document != document:
+                            dotted_names[spread_document] = _dotted_module_name(
+                                self._document_modules[spread_document],
+                                document=spread_document,
+                                module_root=module_root,
+                            )
+
+        return dotted_names
 
     @cached_property
     def _resolver(self) -> SelectionResolver:
@@ -322,7 +323,6 @@ class PackageEmitter:
 
     @cached_property
     def _fragment_spellings(self) -> dict[str, SettledSpelling]:
-        """Settled where their names meet others: in the `document` package, which re-exports them, and in their sibling module otherwise."""
         if self._document_sibling_module is None:
             return settle_names(
                 sorted(self._fragments),
@@ -365,7 +365,7 @@ class PackageEmitter:
         settle_module(tree)
 
         for node in ast.walk(tree):
-            # Settled like the name it imports, a helper's alias would make the import a re-export, as PEP 484 spells one, when a module only exports what it defines.
+            # A helper settled like the name it imports would spell a re-export.
             if isinstance(node, ast.alias) and node.asname == node.name:
                 node.asname = None
 
@@ -385,7 +385,7 @@ class PackageEmitter:
         )
 
     def _fragment_order(self, fragment_names: Sequence[str], /) -> list[str]:
-        """*fragment_names*, each after those of them it spreads, since their types may be its bases."""
+        # A fragment comes after the ones it spreads, since it may inherit their types.
         return list(
             TopologicalSorter(
                 {
@@ -411,7 +411,7 @@ class PackageEmitter:
         definition = self._fragments[fragment_name]
         selection_set = self._resolver.resolve(definition)
         return self._data_types.emit(
-            # The fragment's own description, when it has one, says more than its type's.
+            # The fragment's description over its type's.
             replace(selection_set, description=description)
             if (description := description_text(definition.description))
             else selection_set,
@@ -434,7 +434,6 @@ class PackageEmitter:
             fragments=get_transitively_spread_fragments(
                 operation, definitions=self._fragments
             ),
-            # The server knows nothing of the directive, which is the client's assertion.
             client_directive_names=frozenset()
             if self._non_null_directive_name is None
             else frozenset({self._non_null_directive_name}),
@@ -448,7 +447,7 @@ class PackageEmitter:
                 injector_names=self._injector_names,
             ),
             *self._data_types.emit(
-                # `Query` and `Mutation` describe the schema's entry points, which says nothing about this operation, so the root type's description is dropped rather than repeated on every one.
+                # The root type's description says nothing about this operation.
                 replace(self._resolver.resolve(operation), description=""),
                 root_spelling=spellings.data,
                 fragment_reference=fragment_reference,
@@ -513,7 +512,6 @@ class PackageEmitter:
         ]
         source = self._module_source(
             [
-                # After the helpers' imports, which `_module_source()` puts first.
                 *(
                     self._import_document_module(imported, alias=alias)
                     for imported, alias in sorted(aliases.items())
@@ -550,10 +548,7 @@ class PackageEmitter:
     def _emit_document_reexports(
         self, modules: Mapping[PurePosixPath, PurePosixPath], /
     ) -> str:
-        """The `document` subpackage's `__init__.py`, re-exporting every operation and fragment by name, since their module also holds the types of their operations' variables and data.
-
-        Its modules are listed in `__lazy_modules__`, which Python 3.15 imports on first use (PEP 810) and earlier versions ignore: a star import could not be lazy.
-        """
+        """Names are listed rather than star imported, since `__lazy_modules__` (PEP 810) cannot make a star import lazy."""
         stems = sorted((path.stem, document) for document, path in modules.items())
         lazy_modules = ast.Assign(
             targets=[ast.Name(id="__lazy_modules__", ctx=ast.Store())],
@@ -635,7 +630,6 @@ class PackageEmitter:
         return files
 
     def emit(self) -> dict[PurePosixPath, bytes]:
-        """The generated package, as the content of each file keyed by its path relative to the package's directory, modules next to documents included: UTF-8, with LF line endings, whatever the platform."""
         schema_spellings = self._schema_spellings
         document_files = self._emit_document_modules()
         files: dict[PurePosixPath, str] = {
