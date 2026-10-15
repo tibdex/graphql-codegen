@@ -35,7 +35,7 @@ license-files = ["LICENSE"]
 name = "graphql-codegen"
 readme = "README.md"
 requires-python = ">=3.12"
-version = "0.2.0"
+version = "0.2.1"
 
 [project.optional-dependencies]
 # Only reading a YAML graphql-config file needs it.
@@ -135,7 +135,7 @@ ignore = [
   "undocumented-public-module",
   "undocumented-public-nested-class",
   "undocumented-public-package",
-  "useless-import-alias",                      # `X as X` is how PEP 484 marks a re-export, in any module and not only an `__init__.py`.
+  "useless-import-alias",                # `X as X` is how PEP 484 marks a re-export, in any module and not only an `__init__.py`.
 ]
 select = ["ALL"]
 
