@@ -264,7 +264,7 @@ from .error import (
 )
 from .injection import OMITTED as OMITTED
 from .merge import merge as merge
-from .operation import Operation as Operation
+from .operation import Operation as Operation, OperationRequest as OperationRequest
 from .request import PreparedRequest as PreparedRequest, Request as Request
 ```
 

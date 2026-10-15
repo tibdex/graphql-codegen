@@ -13,7 +13,7 @@ from ._sigil import SIGIL
 from .error import ExecutionError, GraphqlError, UnexpectedNullError
 from .injection import _Injectors
 from .operation import (
-    _OperationRequest,
+    OperationRequest,
     _origin_note,
     _parse_response,
     _resolve_variables,
@@ -23,7 +23,7 @@ from .request import PreparedRequest, Request
 
 @final
 class _MergedRequest[Type: OperationType, Data](Request[Type, Data]):
-    def __init__(self, requests: Sequence[_OperationRequest[Type, object]], /) -> None:
+    def __init__(self, requests: Sequence[OperationRequest[Type, object]], /) -> None:
         if not requests:
             raise ValueError("Cannot merge no request.")
 
@@ -32,7 +32,7 @@ class _MergedRequest[Type: OperationType, Data](Request[Type, Data]):
 
     @override
     def __repr__(self) -> str:
-        return f"merge({', '.join(map(repr, self._requests))})"
+        return f"{merge.__name__}({', '.join(map(repr, self._requests))})"
 
     @override
     def prepare(self, *, injectors: _Injectors | None = None) -> PreparedRequest[Data]:
@@ -47,45 +47,45 @@ class _MergedRequest[Type: OperationType, Data](Request[Type, Data]):
 # Typed position by position up to 6 requests, as many as typeshed's `asyncio.gather()`: https://github.com/python/typeshed/blob/1ee8b928886a93b060bdafbf1e30dc0bb7c85848/stdlib/asyncio/tasks.pyi#L108-L155
 @overload
 def merge[Type: (Literal["query"], Literal["mutation"]), D1, D2](
-    first: _OperationRequest[Type, D1], second: _OperationRequest[Type, D2], /
+    first: OperationRequest[Type, D1], second: OperationRequest[Type, D2], /
 ) -> Request[Type, tuple[D1, D2]]: ...
 @overload
 def merge[Type: (Literal["query"], Literal["mutation"]), D1, D2, D3](
-    first: _OperationRequest[Type, D1],
-    second: _OperationRequest[Type, D2],
-    third: _OperationRequest[Type, D3],
+    first: OperationRequest[Type, D1],
+    second: OperationRequest[Type, D2],
+    third: OperationRequest[Type, D3],
     /,
 ) -> Request[Type, tuple[D1, D2, D3]]: ...
 @overload
 def merge[Type: (Literal["query"], Literal["mutation"]), D1, D2, D3, D4](
-    first: _OperationRequest[Type, D1],
-    second: _OperationRequest[Type, D2],
-    third: _OperationRequest[Type, D3],
-    fourth: _OperationRequest[Type, D4],
+    first: OperationRequest[Type, D1],
+    second: OperationRequest[Type, D2],
+    third: OperationRequest[Type, D3],
+    fourth: OperationRequest[Type, D4],
     /,
 ) -> Request[Type, tuple[D1, D2, D3, D4]]: ...
 @overload
 def merge[Type: (Literal["query"], Literal["mutation"]), D1, D2, D3, D4, D5](
-    first: _OperationRequest[Type, D1],
-    second: _OperationRequest[Type, D2],
-    third: _OperationRequest[Type, D3],
-    fourth: _OperationRequest[Type, D4],
-    fifth: _OperationRequest[Type, D5],
+    first: OperationRequest[Type, D1],
+    second: OperationRequest[Type, D2],
+    third: OperationRequest[Type, D3],
+    fourth: OperationRequest[Type, D4],
+    fifth: OperationRequest[Type, D5],
     /,
 ) -> Request[Type, tuple[D1, D2, D3, D4, D5]]: ...
 @overload
 def merge[Type: (Literal["query"], Literal["mutation"]), D1, D2, D3, D4, D5, D6](
-    first: _OperationRequest[Type, D1],
-    second: _OperationRequest[Type, D2],
-    third: _OperationRequest[Type, D3],
-    fourth: _OperationRequest[Type, D4],
-    fifth: _OperationRequest[Type, D5],
-    sixth: _OperationRequest[Type, D6],
+    first: OperationRequest[Type, D1],
+    second: OperationRequest[Type, D2],
+    third: OperationRequest[Type, D3],
+    fourth: OperationRequest[Type, D4],
+    fifth: OperationRequest[Type, D5],
+    sixth: OperationRequest[Type, D6],
     /,
 ) -> Request[Type, tuple[D1, D2, D3, D4, D5, D6]]: ...
 @overload
 def merge[Type: (Literal["query"], Literal["mutation"]), Data](
-    requests: Sequence[_OperationRequest[Type, Data]], /
+    requests: Sequence[OperationRequest[Type, Data]], /
 ) -> Request[Type, tuple[Data, ...]]: ...
 def merge(*args: Any) -> Request[Any, Any]:
     """Return one request for several queries, or several mutations, whose data is a tuple of their data.
@@ -102,7 +102,7 @@ def merge(*args: Any) -> Request[Any, Any]:
 
 def _prepare_merged(
     operation_type: OperationType,
-    requests: Sequence[_OperationRequest[OperationType, object]],
+    requests: Sequence[OperationRequest[OperationType, object]],
     /,
     *,
     injectors: _Injectors | None,
@@ -192,7 +192,7 @@ def _prepare_merged(
 
 
 def _raises_execution_error(
-    request: _OperationRequest[OperationType, object], /
+    request: OperationRequest[OperationType, object], /
 ) -> bool:
     match request._on_execution_error:
         case "raise":

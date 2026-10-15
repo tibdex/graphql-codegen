@@ -55,20 +55,19 @@ class Operation[Type: OperationType, Variables: Mapping[str, object], Data]:
         self._injections: Final = injections
         self._data_type: Final = data_type
 
-    def __call__(self, variables: Variables, /) -> _OperationRequest[Type, Data]:
+    def __call__(self, variables: Variables, /) -> OperationRequest[Type, Data]:
         """Return the request of this operation with *variables*.
 
         A method rather than a function taking both, so every type checker checks the variables against their exact type.
         """
-        return _OperationRequest(
+        return OperationRequest(
             operation=self, variables=variables, on_execution_error="raise"
         )
 
     @override
     def __repr__(self) -> str:
-        return (
-            f"Operation(operation_type={self._operation_type!r}, name={self._name!r})"
-        )
+        # As the document spells it, in brackets since it is not code.
+        return f"<{self._operation_type} {self._name}>"
 
     @cached_property
     def _data_parser(self) -> Convert | None:
@@ -97,7 +96,7 @@ class Operation[Type: OperationType, Variables: Mapping[str, object], Data]:
 
 
 @final
-class _OperationRequest[Type: OperationType, Data](Request[Type, Data]):
+class OperationRequest[Type: OperationType, Data](Request[Type, Data]):
     def __init__(
         self,
         *,
@@ -106,6 +105,7 @@ class _OperationRequest[Type: OperationType, Data](Request[Type, Data]):
         variables: Mapping[str, object],
         on_execution_error: ExecutionErrorHandling,
     ) -> None:
+        """Private."""
         super().__init__(operation_type=operation._operation_type)
         self._operation: Final = operation
         self._variables: Final = variables
@@ -113,14 +113,23 @@ class _OperationRequest[Type: OperationType, Data](Request[Type, Data]):
 
     @override
     def __repr__(self) -> str:
-        return f"Request(operation={self._operation!r}, variables={self._variables!r}, on_execution_error={self._on_execution_error!r})"
+        # As written: the operation called with its variables.
+        call = f"{self._operation._name}({self._variables!r})"
+
+        match self._on_execution_error:
+            case "raise":
+                return call
+            case "return":
+                return f"{call}.{self.returning_error.__name__}()"
+            case _ as never:
+                assert_never(never)
 
     def returning_error(
         self,
-    ) -> _OperationRequest[Type, Data | ExecutionError[Data]]:
+    ) -> OperationRequest[Type, Data | ExecutionError[Data]]:
         """Return a copy of this request for which `PreparedRequest.parse()` returns its `ExecutionError` instead of raising it."""
         # Sound since `Data` is covariant: a request returning its data is one returning its data or its error.
-        return _OperationRequest(
+        return OperationRequest(
             operation=self._operation,
             variables=self._variables,
             on_execution_error="return",

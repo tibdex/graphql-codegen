@@ -8,6 +8,7 @@ from graphql_codegen.runtime import (
     OMITTED,
     ExecutionError,
     Operation,
+    OperationRequest,
     ProtocolError,
     RequestError,
 )
@@ -26,11 +27,27 @@ _LIST_BOOKS: Final[
 )
 
 
-def test_a_repr_names_the_operation_rather_than_dumping_its_document() -> None:
-    assert (
-        repr(_LIST_BOOKS({}))
-        == "Request(operation=Operation(operation_type='query', name='ListBooks'), variables={}, on_execution_error='raise')"
-    )
+def test_an_operation_s_repr_is_how_its_document_spells_it() -> None:
+    assert repr(_LIST_BOOKS) == "<query ListBooks>"
+
+
+@pytest.mark.parametrize(
+    ("request_", "expected"),
+    [
+        pytest.param(
+            _LIST_BOOKS({"first": 2}), "ListBooks({'first': 2})", id="raising"
+        ),
+        pytest.param(
+            _LIST_BOOKS({"first": 2}).returning_error(),
+            "ListBooks({'first': 2}).returning_error()",
+            id="returning its error",
+        ),
+    ],
+)
+def test_a_request_s_repr_is_how_it_is_written(
+    request_: OperationRequest[Literal["query"], object], expected: str
+) -> None:
+    assert repr(request_) == expected
 
 
 def test_a_request_is_the_spec_s_json_envelope() -> None:
