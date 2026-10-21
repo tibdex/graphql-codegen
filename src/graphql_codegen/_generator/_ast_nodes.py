@@ -1,6 +1,6 @@
 import ast
 from ast import literal_eval
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from io import StringIO
 from itertools import accumulate, pairwise
 from textwrap import indent
@@ -33,7 +33,7 @@ FUTURE_ANNOTATIONS: Final = ast.ImportFrom(
     names=[ast.alias(name="annotations")],
     level=0,
 )
-"""Input types reference each other in cycles, so the input module postpones its annotations instead of quoting them.
+"""Input types reference each other in cycles, so the schema module postpones its annotations instead of quoting them.
 
 Under PEP 563, a TypedDict's `__required_keys__` then reports every key as required: read these types with `typing.get_type_hints()`.
 """
@@ -105,24 +105,6 @@ def class_definition(
         body=statements,
         decorator_list=[],
         type_params=[],
-    )
-
-
-def relative_import_from(
-    module: str | None,
-    names: Iterable[str],
-    /,
-    *,
-    level: int,
-    re_export: bool,
-) -> ast.ImportFrom:
-    return ast.ImportFrom(
-        module=module,
-        names=[
-            ast.alias(name=imported, asname=imported if re_export else None)
-            for imported in names
-        ],
-        level=level,
     )
 
 

@@ -127,7 +127,7 @@ def emit_variables_type(
                     variable_type,
                     position="input",
                     object_annotation=None,
-                    bare_inputs=False,
+                    bare_schema_types=False,
                 ),
                 required=is_non_null_type(variable_type)
                 and definition.default_value is None,

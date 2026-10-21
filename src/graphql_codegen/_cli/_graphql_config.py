@@ -243,7 +243,10 @@ def _parse_extension(
         default=None,
     )
     injector_names = optional(
-        unread, "injectorNames", parse_strings, default=frozenset()
+        unread,
+        "injectorNames",
+        lambda value: set(parse_strings(value)),
+        default=set(),
     )
     non_null_directive_name = optional(
         unread, "nonNullDirectiveName", parse_string, default=None

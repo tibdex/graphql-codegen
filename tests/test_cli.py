@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from tests._bookshop import BOOKSHOP_DIRECTORY
+from tests._bookshop import BOOKSHOP_DIRECTORY, BOOKSHOP_GENERATED_PACKAGE_DIRECTORY
 
 
 @pytest.mark.parametrize(
@@ -22,7 +22,7 @@ from tests._bookshop import BOOKSHOP_DIRECTORY
 def test_the_cli_generates_the_committed_bookshop_package(
     command: list[str], tmp_path: Path
 ) -> None:
-    generated = ("graphql", "*_graphql.py")
+    generated = (BOOKSHOP_GENERATED_PACKAGE_DIRECTORY.name, "*_graphql.py")
 
     for pattern in generated:
         # Guards the test: a pattern matching nothing would leave the copy holding what the command must write.

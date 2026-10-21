@@ -3,13 +3,13 @@
 import collections.abc as _abc
 from .runtime import _compat
 from .runtime import injection as _injection
-from . import _scalar
+from . import schema as _schema
 
 class InjectorFunctions(_compat.TypedDict, closed=True):
     """The functions supplying each injected value, by name.
 
     Where the value may be null, one returning `OMITTED` leaves it out, and one returning `None` sends `null`."""
-    idempotencyKey: _abc.Callable[[], _scalar.UUID]
+    idempotencyKey: _abc.Callable[[], _schema.UUID]
 
 def injectors(functions: InjectorFunctions, /) -> _injection._Injectors:
     """Return what `Request.prepare()` calls to supply the injected values, each serialized as its type says."""

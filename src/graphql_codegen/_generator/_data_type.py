@@ -25,10 +25,9 @@ from graphql_codegen._generator._ast_nodes import (
 )
 from graphql_codegen._generator._naming import (
     COMPAT,
-    INPUT,
     REFLECTION,
+    SCHEMA,
     TYPING,
-    SchemaSpellings,
     nested_type_name,
 )
 from graphql_codegen._generator._schema import as_non_null
@@ -125,14 +124,14 @@ class DataTypeEmitter:
         *,
         schema: GraphQLSchema,
         annotations: AnnotationBuilder,
-        schema_spellings: SchemaSpellings,
+        type_spellings: Mapping[str, SettledSpelling],
         resolve_fragment: Callable[[str], SelectionSet],
         struct_types: StructTypes | None,
         non_null_directive_name: str | None,
     ) -> None:
         self._schema: Final = schema
         self._annotations: Final = annotations
-        self._schema_spellings: Final = schema_spellings
+        self._type_spellings: Final = type_spellings
         self._resolve_fragment: Final = resolve_fragment
         self._struct_types: Final = struct_types
         self._non_null_directive_name: Final = non_null_directive_name
@@ -444,8 +443,7 @@ class DataTypeEmitter:
 
         if struct_input_name is not None:
             annotation: ast.expr = qualified(
-                INPUT,
-                self._schema_spellings.type_spellings[struct_input_name],
+                SCHEMA, self._type_spellings[struct_input_name]
             )
 
             if not is_non_null_type(field_type):
@@ -455,7 +453,7 @@ class DataTypeEmitter:
                 field_type,
                 position="data",
                 object_annotation=None,
-                bare_inputs=False,
+                bare_schema_types=False,
             )
         else:
             normalized = self._normalize(field.selection_set)
@@ -483,7 +481,7 @@ class DataTypeEmitter:
                 field_type,
                 position="data",
                 object_annotation=object_annotation,
-                bare_inputs=False,
+                bare_schema_types=False,
             )
 
         if non_null:

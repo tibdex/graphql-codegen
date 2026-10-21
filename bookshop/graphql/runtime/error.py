@@ -27,14 +27,20 @@ class UnexpectedNullError(Error):
     """
 
     def __init__(self, path: list[str | int], /) -> None:
-        self.path: Final = path
+        """Private."""
+        # Each level the error unwinds through prepends its key or index.
+        self._path: Final = path
         super().__init__()
+
+    @property
+    def path(self) -> Sequence[str | int]:
+        return self._path
 
     @override
     def __str__(self) -> str:
         formatted = "".join(
             f"[{segment}]" if isinstance(segment, int) else f".{segment}"
-            for segment in self.path
+            for segment in self._path
         ).removeprefix(".")
         return f"Expected `{formatted}` to not be null."
 
@@ -51,7 +57,7 @@ class GraphqlError(TypedDict):
     message: Required[str]
     locations: NotRequired[Sequence[Location]]
     path: NotRequired[Sequence[str | int]]
-    extensions: NotRequired[object]
+    extensions: NotRequired[Mapping[str, object]]
 
 
 class ResponseError(Error):
@@ -64,6 +70,7 @@ class ResponseError(Error):
         *,
         extensions: Mapping[str, object] | None,
     ) -> None:
+        """Private."""
         assert errors, "Cannot raise without at least one error."
         self.errors: Final = tuple(errors)
         self.extensions: Final = extensions
@@ -117,6 +124,7 @@ class ExecutionError(ResponseError, Generic[_Data_co]):
         extensions: Mapping[str, object] | None,
         partial_data_parser: Callable[[object], object] | None,
     ) -> None:
+        """Private."""
         super().__init__(errors, extensions=extensions)
         self.data = data
         self._partial_data_parser: Final = partial_data_parser

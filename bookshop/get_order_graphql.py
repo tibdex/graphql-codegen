@@ -5,14 +5,14 @@ import typing as _typing
 from bookshop.graphql.runtime import _compat
 from bookshop.graphql.runtime import _operation_type
 from bookshop.graphql import runtime as _runtime
-from bookshop.graphql.schema import enum as _enum
+from bookshop.graphql import schema as _schema
 
 class GetOrderVariables(_compat.TypedDict, closed=True):
     id: _builtins.str
 
 class _GetOrderData_order(_compat.TypedDict, closed=True):
     id: _builtins.str
-    status: _enum.OrderStatus
+    status: _schema.OrderStatus
 
 class GetOrderData(_compat.TypedDict, closed=True):
     order: _GetOrderData_order | None

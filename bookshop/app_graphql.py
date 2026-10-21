@@ -6,9 +6,7 @@ from bookshop.graphql.runtime import _compat
 from bookshop.graphql.runtime import _operation_type
 from bookshop.graphql.runtime import _reflection
 from bookshop.graphql import runtime as _runtime
-from bookshop.graphql.schema import enum as _enum
-from bookshop.graphql.schema import input as _input
-from bookshop.graphql import _scalar
+from bookshop.graphql import schema as _schema
 
 class _BookCard_author(_compat.TypedDict, closed=True):
     name: _builtins.str
@@ -17,12 +15,12 @@ class BookCard(_compat.TypedDict):
     """What a book shows in a list."""
     id: _builtins.str
     title: _builtins.str
-    price: _scalar.Money
+    price: _schema.Money
     author: _BookCard_author | None
     """Null for an anthology, which has no single author."""
 
 class GetBookVariables(_compat.TypedDict, closed=True):
-    lookup: _input.BookLookup
+    lookup: _schema.BookLookup
     """An identifier or an ISBN."""
     withReviews: _typing.NotRequired[_builtins.bool]
 
@@ -30,10 +28,10 @@ class _GetBookData_book_reviews(_compat.TypedDict, closed=True):
     rating: _builtins.int
     """From 1 to 5."""
     text: _builtins.str | None
-    postedAt: _scalar.DateTime
+    postedAt: _schema.DateTime
 
 class _GetBookData_book(BookCard, closed=True):
-    isbn: _scalar.ISBN
+    isbn: _schema.ISBN
     pageCount: _builtins.int
     reviews: _typing.NotRequired[_builtins.list[_GetBookData_book_reviews]]
 
@@ -71,19 +69,19 @@ _SearchData_search_Book_Base = _compat.TypedDict('_SearchData_search_Book_Base',
 
 class _SearchData_search_Book(_SearchData_search_Book_Base, closed=True):
     title: _builtins.str
-    price: _scalar.Money
+    price: _schema.Money
 
 _SearchData_search_Magazine_Base = _compat.TypedDict('_SearchData_search_Magazine_Base', {'__typename': _compat.ReadOnly[_typing.Literal['Magazine']]})
 
 class _SearchData_search_Magazine(_SearchData_search_Magazine_Base, closed=True):
     title: _builtins.str
-    price: _scalar.Money
+    price: _schema.Money
 
 _SearchData_search_Audiobook_Base = _compat.TypedDict('_SearchData_search_Audiobook_Base', {'__typename': _compat.ReadOnly[_typing.Literal['Audiobook']]})
 
 class _SearchData_search_Audiobook(_SearchData_search_Audiobook_Base, closed=True):
     title: _builtins.str
-    price: _scalar.Money
+    price: _schema.Money
 
 _SearchData_search_Author_Base = _compat.TypedDict('_SearchData_search_Author_Base', {'__typename': _compat.ReadOnly[_typing.Literal['Author']]})
 
@@ -110,11 +108,11 @@ Search: _typing.Final = _runtime.Operation(operation_type=_operation_type.QUERY,
 }""", variables_type=SearchVariables, data_type=SearchData)
 
 class ListBooksVariables(_compat.TypedDict, closed=True):
-    filter: _typing.NotRequired[_input.BookFilter | None]
+    filter: _typing.NotRequired[_schema.BookFilter | None]
     first: _typing.NotRequired[_builtins.int | None]
 
 class _ListBooksData_books(BookCard, closed=True):
-    genre: _enum.Genre
+    genre: _schema.Genre
 
 class ListBooksData(_compat.TypedDict, closed=True):
     books: _builtins.list[_ListBooksData_books]
@@ -144,7 +142,7 @@ _GetPublicationData_publication_Book_Base = _compat.TypedDict('_GetPublicationDa
 class _GetPublicationData_publication_Book(_GetPublicationData_publication_Book_Base, closed=True):
     title: _builtins.str
     pages: _builtins.int
-    isbn: _scalar.ISBN
+    isbn: _schema.ISBN
 
 _GetPublicationData_publication_Magazine_Base = _compat.TypedDict('_GetPublicationData_publication_Magazine_Base', {'__typename': _compat.ReadOnly[_typing.Literal['Magazine']]})
 
@@ -186,7 +184,7 @@ class GetSavedSearchVariables(_compat.TypedDict, closed=True):
     name: _builtins.str
 
 class _GetSavedSearchData_savedSearch(_compat.TypedDict, closed=True):
-    value: _input.BookFilter | None
+    value: _schema.BookFilter | None
 
 class GetSavedSearchData(_compat.TypedDict, closed=True):
     savedSearch: _GetSavedSearchData_savedSearch | None
@@ -199,13 +197,13 @@ GetSavedSearch: _typing.Final = _runtime.Operation(operation_type=_operation_typ
 }""", variables_type=GetSavedSearchVariables, data_type=GetSavedSearchData)
 
 class PlaceOrderVariables(_compat.TypedDict, closed=True):
-    input: _input.PlaceOrderInput
+    input: _schema.PlaceOrderInput
 
 class _PlaceOrderData_placeOrder(_compat.TypedDict, closed=True):
     id: _builtins.str
-    status: _enum.OrderStatus
-    total: _scalar.Money
-    placedAt: _scalar.DateTime
+    status: _schema.OrderStatus
+    total: _schema.Money
+    placedAt: _schema.DateTime
 
 class PlaceOrderData(_compat.TypedDict, closed=True):
     placeOrder: _PlaceOrderData_placeOrder
@@ -221,11 +219,11 @@ PlaceOrder: _typing.Final = _runtime.Operation(operation_type=_operation_type.MU
 }""", variables_type=PlaceOrderVariables, injections={'idempotencyKey': _builtins.frozenset({('input',)})}, data_type=PlaceOrderData)
 
 class CancelOrderVariables(_compat.TypedDict, closed=True):
-    input: _input.CancelOrderInput
+    input: _schema.CancelOrderInput
 
 class _CancelOrderData_cancelOrder(_compat.TypedDict, closed=True):
     id: _builtins.str
-    status: _enum.OrderStatus
+    status: _schema.OrderStatus
 
 class CancelOrderData(_compat.TypedDict, closed=True):
     cancelOrder: _CancelOrderData_cancelOrder | None
@@ -246,7 +244,7 @@ class OnOrderStatusChangedVariables(_compat.TypedDict, closed=True):
 
 class _OnOrderStatusChangedData_orderStatusChanged(_compat.TypedDict, closed=True):
     id: _builtins.str
-    status: _enum.OrderStatus
+    status: _schema.OrderStatus
 
 class OnOrderStatusChangedData(_compat.TypedDict, closed=True):
     orderStatusChanged: _OnOrderStatusChangedData_orderStatusChanged

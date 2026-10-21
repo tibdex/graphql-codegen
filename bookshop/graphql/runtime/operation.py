@@ -44,10 +44,7 @@ class Operation[Type: OperationType, Variables: Mapping[str, object], Data]:
         injections: Mapping[str, frozenset[tuple[str, ...]]] = _NO_INJECTIONS,
         data_type: type[Data],
     ) -> None:
-        """*injections* maps each injector's name to the paths of the objects receiving its value, `()` being the variables themselves.
-
-        What crosses the wire is read off *variables_type* and *data_type* at runtime.
-        """
+        """Private."""
         self._operation_type: Final = operation_type
         self._name: Final = name
         self._document: Final = document
