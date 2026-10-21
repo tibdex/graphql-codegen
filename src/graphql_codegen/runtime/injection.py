@@ -1,4 +1,4 @@
-# Copied into each generated package, where this line says not to edit it.
+# Copied into each generated package, where this line becomes a `DO NOT EDIT` header.
 
 import sys
 from collections.abc import Callable, Mapping

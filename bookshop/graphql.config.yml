@@ -1,7 +1,7 @@
 # An SDL file here, but globs, introspection results, and server URLs work too.
 schema: schema.graphqls
 documents: "*.graphql"
-# This library's config, under its extension name.
+# graphql-codegen's config, under its extension name.
 extensions:
   pythonCodegen:
     # Where imports start, relative to this file's directory.

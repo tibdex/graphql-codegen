@@ -55,6 +55,8 @@ input _input {
 # Before `str`, which references it: pyrefly reads a forward reference named like a builtin as the builtin.
 input input {
   x: Int
+  # A key no class body can declare, of an enum defined after it.
+  class: Later
 }
 
 input str {
@@ -73,6 +75,10 @@ enum _enum {
 
 enum None {
   X
+}
+
+enum Later {
+  Y
 }
 """
 
@@ -193,11 +199,6 @@ def test_every_module_binds_each_name_once(
             "document/GraphQL_request.py",
             "\n__debug___: _typing_1.Final = _runtime.Operation(",
             id="and so does `__debug__`, the one other name that cannot be",
-        ),
-        pytest.param(
-            "schema/__init__.py",
-            "from .enum_1 import *\nfrom .input_1 import *\n",
-            id="and a schema module for the types named like it",
         ),
     ],
 )

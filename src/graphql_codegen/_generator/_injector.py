@@ -195,7 +195,7 @@ def emit_injector_module(
 
     for injector_name, type_ in sorted(injected_types.items()):
         value = annotations.build(
-            type_, position="input", object_annotation=None, bare_inputs=False
+            type_, position="input", object_annotation=None, bare_schema_types=False
         )
 
         # A nullable input accepts omission too, while a non-null one accepts neither.

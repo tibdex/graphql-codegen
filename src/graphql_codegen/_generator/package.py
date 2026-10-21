@@ -23,12 +23,10 @@ from graphql_codegen import runtime
 from graphql_codegen._generator._annotation import AnnotationBuilder
 from graphql_codegen._generator._ast_nodes import (
     FUTURE_ANNOTATIONS,
-    constant,
     import_as,
     module,
     name,
     qualified,
-    relative_import_from,
     unparse,
 )
 from graphql_codegen._generator._data_type import DataTypeEmitter
@@ -42,8 +40,7 @@ from graphql_codegen._generator._imports import (
     DOCUMENT_PACKAGE,
     INJECTION_MODULE,
     RUNTIME_PACKAGE,
-    SCALAR_MODULE,
-    SCHEMA_PACKAGE,
+    SCHEMA_MODULE,
     GeneratedModule,
     OutsideModule,
     PackageModule,
@@ -57,9 +54,7 @@ from graphql_codegen._generator._injector import (
 from graphql_codegen._generator._merge import print_merge_template
 from graphql_codegen._generator._naming import (
     OperationSpellings,
-    SchemaSpellings,
     operation_spellings,
-    schema_spellings,
 )
 from graphql_codegen._generator._operation import (
     description_text,
@@ -67,12 +62,10 @@ from graphql_codegen._generator._operation import (
     emit_variables_type,
     strip_for_server,
 )
-from graphql_codegen._generator._scalar import check_scalars, emit_scalars
+from graphql_codegen._generator._scalar import check_scalars
 from graphql_codegen._generator._schema import prepare_schema
 from graphql_codegen._generator._schema_type import (
-    emit_enums,
-    emit_inputs,
-    emit_schema_package,
+    emit_schema_module,
     get_reached_type_names,
 )
 from graphql_codegen._generator._selection import SelectionResolver
@@ -169,9 +162,7 @@ def _dotted_module_name(
     )
 
 
-_RUNTIME_MARKER: Final = (
-    b"# Copied into each generated package, where this line says not to edit it.\n"
-)
+_RUNTIME_MARKER: Final = b"# Copied into each generated package, where this line becomes a `DO NOT EDIT` header.\n"
 """The first line of every runtime module, swapped for the generated file comment."""
 
 
@@ -233,13 +224,7 @@ class PackageEmitter:
         modules = document_modules(
             sorted({*operation_names, *fragment_names}), sibling_module=sibling_module
         )
-        # The `document` package re-exports operations beside its modules, which keep their names.
-        module_spellings = (
-            {SettledSpelling(path.stem) for path in modules.values()}
-            if sibling_module is None
-            else set()
-        )
-        operation_spellings = settle_names(sorted(operations), taken=module_spellings)
+        operation_spellings = settle_names(sorted(operations), taken=set())
 
         injections = {
             operation_name: get_injections(
@@ -265,7 +250,6 @@ class PackageEmitter:
         }
         self._fragments: Final = fragments
         self._fragment_names_by_document: Final = fragment_names
-        self._module_spellings: Final = module_spellings
         self._fragment_documents: Final = fragment_documents
         self._document_modules: Final = modules
         self._imported_module_dotted_names: Final = (
@@ -307,28 +291,17 @@ class PackageEmitter:
         return SelectionResolver(self._fragments, schema=self._schema)
 
     @cached_property
-    def _schema_spellings(self) -> SchemaSpellings:
-        return schema_spellings(
-            get_reached_type_names(
-                self._document,
-                schema=self._schema,
-                struct_types=self._struct_types,
-                injector_names=self._injector_names,
-            ),
+    def _type_spellings(self) -> dict[str, SettledSpelling]:
+        reached = get_reached_type_names(
+            self._document,
+            schema=self._schema,
+            struct_types=self._struct_types,
+            injector_names=self._injector_names,
         )
-
-    @cached_property
-    def _scalar_spellings(self) -> dict[str, SettledSpelling]:
-        return settle_names(sorted(self._scalars), taken=set())
+        return settle_names(sorted({*reached, *self._scalars}), taken=set())
 
     @cached_property
     def _fragment_spellings(self) -> dict[str, SettledSpelling]:
-        if self._document_sibling_module is None:
-            return settle_names(
-                sorted(self._fragments),
-                taken={*self._module_spellings, *self._operation_spellings.values()},
-            )
-
         return {
             fragment_name: spelling
             for document, names in self._fragment_names_by_document.items()
@@ -345,10 +318,7 @@ class PackageEmitter:
 
     @cached_property
     def _annotations(self) -> AnnotationBuilder:
-        return AnnotationBuilder(
-            scalar_spellings=self._scalar_spellings,
-            schema_spellings=self._schema_spellings,
-        )
+        return AnnotationBuilder(type_spellings=self._type_spellings)
 
     def _module_source(
         self,
@@ -358,9 +328,7 @@ class PackageEmitter:
         generated_module: GeneratedModule,
         preamble: Sequence[ast.stmt],
     ) -> str:
-        imports = helper_imports(
-            body, module=generated_module, schema_spellings=self._schema_spellings
-        )
+        imports = helper_imports(body, module=generated_module)
         tree = module([*preamble, *imports, *body])
         settle_module(tree)
 
@@ -376,7 +344,7 @@ class PackageEmitter:
         return DataTypeEmitter(
             schema=self._schema,
             annotations=self._annotations,
-            schema_spellings=self._schema_spellings,
+            type_spellings=self._type_spellings,
             resolve_fragment=lambda fragment_name: self._resolver.resolve(
                 self._fragments[fragment_name]
             ),
@@ -545,59 +513,6 @@ class PackageEmitter:
             case _ as never:
                 assert_never(never)
 
-    def _emit_document_reexports(
-        self, modules: Mapping[PurePosixPath, PurePosixPath], /
-    ) -> str:
-        """Names are listed rather than star imported, since `__lazy_modules__` (PEP 810) cannot make a star import lazy."""
-        stems = sorted((path.stem, document) for document, path in modules.items())
-        lazy_modules = ast.Assign(
-            targets=[ast.Name(id="__lazy_modules__", ctx=ast.Store())],
-            value=ast.List(
-                elts=[
-                    # Fully qualified from `__name__`, so that the package works wherever it is written.
-                    ast.BinOp(
-                        left=ast.Name(id="__name__", ctx=ast.Load()),
-                        op=ast.Add(),
-                        right=constant(f".{stem}"),
-                    )
-                    for stem, _ in stems
-                ],
-                ctx=ast.Load(),
-            ),
-            lineno=0,
-        )
-        return unparse(
-            module(
-                [
-                    lazy_modules,
-                    *(
-                        relative_import_from(
-                            stem,
-                            sorted(
-                                [
-                                    *(
-                                        self._operation_spellings[name]
-                                        for name in self._operation_names_by_document.get(
-                                            document, []
-                                        )
-                                    ),
-                                    *(
-                                        self._fragment_spellings[name]
-                                        for name in self._fragment_names_by_document.get(
-                                            document, []
-                                        )
-                                    ),
-                                ]
-                            ),
-                            level=1,
-                            re_export=True,
-                        )
-                        for stem, document in stems
-                    ),
-                ],
-            ),
-        )
-
     def _emit_document_modules(self) -> dict[PurePosixPath, str]:
         files: dict[PurePosixPath, str]
         generated_module: GeneratedModule
@@ -605,11 +520,7 @@ class PackageEmitter:
         match self._document_sibling_module:
             case None:
                 modules = self._document_modules
-                files = {
-                    PurePosixPath(DOCUMENT_PACKAGE, "__init__.py"): _generated(
-                        self._emit_document_reexports(modules)
-                    )
-                }
+                files = {PurePosixPath(DOCUMENT_PACKAGE, "__init__.py"): _generated("")}
                 generated_module = PackageModule(path=(DOCUMENT_PACKAGE,))
             case DocumentSiblingModule(package_location=location):
                 directory = location._package_directory
@@ -630,42 +541,19 @@ class PackageEmitter:
         return files
 
     def emit(self) -> dict[PurePosixPath, bytes]:
-        schema_spellings = self._schema_spellings
         document_files = self._emit_document_modules()
         files: dict[PurePosixPath, str] = {
             PurePosixPath("__init__.py"): _generated(""),
-            PurePosixPath(f"{SCALAR_MODULE}.py"): _generated(
+            PurePosixPath(f"{SCHEMA_MODULE}.py"): _generated(
                 self._module_source(
-                    emit_scalars(self._scalars, spellings=self._scalar_spellings),
-                    generated_module=PackageModule(path=()),
-                    preamble=(),
-                )
-            ),
-            PurePosixPath(SCHEMA_PACKAGE, "__init__.py"): _generated(
-                unparse(
-                    emit_schema_package(self._schema, schema_spellings=schema_spellings)
-                )
-            ),
-            PurePosixPath(
-                SCHEMA_PACKAGE, f"{schema_spellings.enum_module}.py"
-            ): _generated(
-                self._module_source(
-                    emit_enums(self._schema, schema_spellings=schema_spellings),
-                    generated_module=PackageModule(path=(SCHEMA_PACKAGE,)),
-                    preamble=(),
-                )
-            ),
-            PurePosixPath(
-                SCHEMA_PACKAGE, f"{schema_spellings.input_module}.py"
-            ): _generated(
-                self._module_source(
-                    emit_inputs(
+                    emit_schema_module(
                         self._schema,
                         annotations=self._annotations,
-                        schema_spellings=schema_spellings,
+                        type_spellings=self._type_spellings,
+                        scalars=self._scalars,
                         injector_names=self._injector_names,
                     ),
-                    generated_module=PackageModule(path=(SCHEMA_PACKAGE,)),
+                    generated_module=PackageModule(path=()),
                     preamble=[FUTURE_ANNOTATIONS],
                 )
             ),

@@ -1,4 +1,4 @@
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from typing import Final, final
 
@@ -13,12 +13,10 @@ TYPING: Final = PendingSpelling("_typing")
 ABC: Final = PendingSpelling("_abc")
 BUILTINS: Final = PendingSpelling("_builtins")
 RUNTIME: Final = PendingSpelling("_runtime")
-ENUM: Final = PendingSpelling("_enum")
-INPUT: Final = PendingSpelling("_input")
+SCHEMA: Final = PendingSpelling("_schema")
 INJECTION: Final = PendingSpelling("_injection")
 OPERATION_TYPE: Final = PendingSpelling("_operation_type")
 REFLECTION: Final = PendingSpelling("_reflection")
-SCALAR: Final = PendingSpelling("_scalar")
 OMITTED: Final = PendingSpelling("_OMITTED")
 """Imported by name: pyright only takes a sentinel as a type when it is spelled bare."""
 
@@ -56,23 +54,3 @@ def operation_spellings(
         )
         for operation in operations
     }
-
-
-@final
-@dataclass(frozen=True, kw_only=True)
-class SchemaSpellings:
-    type_spellings: Mapping[str, SettledSpelling]
-
-    enum_module: SettledSpelling
-    input_module: SettledSpelling
-
-
-def schema_spellings(type_names: Collection[str], /) -> SchemaSpellings:
-    types = settle_names(sorted(type_names), taken=set())
-    # The package re-exports every type, so its modules must not be spelled like any of them.
-    modules = settle_names(["enum", "input"], taken=set(types.values()))
-    return SchemaSpellings(
-        type_spellings=types,
-        enum_module=modules["enum"],
-        input_module=modules["input"],
-    )

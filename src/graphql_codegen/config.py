@@ -1,4 +1,4 @@
-from collections.abc import Collection, Mapping
+from collections.abc import Mapping, Set as AbstractSet
 from dataclasses import dataclass, field
 from typing import final
 
@@ -12,9 +12,9 @@ from graphql_codegen.scalar import Scalar
 @dataclass(frozen=True, kw_only=True)
 class Config:
     document_sibling_module: DocumentSiblingModule | None = None
-    """When `None`, each document's operations and fragments go to a module named after it in the generated package's `document` subpackage, which re-exports them all."""
+    """When `None`, each document's operations and fragments go to a module named after it in the generated package's `document` subpackage."""
 
-    injector_names: Collection[str] = frozenset()
+    injector_names: AbstractSet[str] = frozenset()
     """The names of the variables and input fields that injectors supply.
 
     They are left out of the generated types, and must have the same type wherever they appear, nullability aside.

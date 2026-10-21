@@ -229,7 +229,7 @@ class _Builder:
                     try:
                         result[key] = convert_value(result[key])
                     except UnexpectedNullError as error:
-                        error.path.insert(0, key)
+                        error._path.insert(0, key)
                         raise
 
             return result
@@ -323,7 +323,7 @@ def _list_converter(convert_item: Convert, /) -> Convert:
             try:
                 result.append(convert_item(item))
             except UnexpectedNullError as error:
-                error.path.insert(0, index)
+                error._path.insert(0, index)
                 raise
 
         return result

@@ -1,5 +1,6 @@
 import ast
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -11,56 +12,61 @@ import pytest
 from graphql import GraphQLSchema, build_schema, parse
 
 from graphql_codegen import Config, generate
-from tests._bookshop import BOOKSHOP_DIRECTORY
+from tests._bookshop import BOOKSHOP_DIRECTORY, BOOKSHOP_GENERATED_PACKAGE_DIRECTORY
 
 
 @pytest.mark.parametrize(
     ("path", "snippet"),
     [
         pytest.param(
-            "schema/enum.py",
+            "schema.py",
             "type Genre = _typing.Literal['FICTION', 'NONFICTION', 'POETRY', 'CHILDREN']",
             id="an enum is a closed literal",
         ),
         pytest.param(
-            "schema/input.py",
+            "schema.py",
             "lines: _abc.Sequence[OrderLineInput]",
             id="a non-null input field without default is required",
         ),
         pytest.param(
-            "schema/input.py",
+            "schema.py",
             "giftWrap: _typing.NotRequired[_builtins.bool]",
             id="a non-null input field with a default is not",
         ),
         pytest.param(
-            "schema/input.py",
+            "schema.py",
             "coupons: _typing.NotRequired[_abc.Sequence[_builtins.str]]",
             id="nor is a list with a default",
         ),
         pytest.param(
-            "schema/input.py",
+            "schema.py",
             "note: _typing.NotRequired[_builtins.str | None]",
             id="a nullable input field may be left out or null",
         ),
         pytest.param(
-            "schema/input.py",
+            "schema.py",
             "type BookLookup = _BookLookup_id | _BookLookup_isbn",
             id="a oneOf input is a union of single-key dicts",
         ),
         pytest.param(
-            "schema/input.py",
+            "schema.py",
             "class _BookLookup_id(_compat.TypedDict, closed=True):\n    id: _builtins.str",
             id="the key a oneOf member sets is not null",
         ),
         pytest.param(
-            "schema/input.py",
+            "schema.py",
             "from __future__ import annotations",
             id="input types reference each other lazily",
         ),
         pytest.param(
-            "schema/input.py",
-            "_BookFilter_and = _compat.TypedDict('_BookFilter_and', {'and': _abc.Sequence[_BookFilter_Ref]}, closed=True)",
-            id="a keyword key is declared functionally, and a recursive reference deferred",
+            "schema.py",
+            'type BookFilter = _BookFilter_genre | _BookFilter_author | _BookFilter_priceBelow | _BookFilter_and | _BookFilter_or | _BookFilter_not\n"""A recursive filter on books."""\n\nclass _BookFilter_genre(',
+            id="a oneOf input's union comes before its members",
+        ),
+        pytest.param(
+            "schema.py",
+            "_BookFilter_and = _compat.TypedDict('_BookFilter_and', {'and': _abc.Sequence[BookFilter]}, closed=True)",
+            id="so that a keyword key, declared functionally, names it directly",
         ),
         pytest.param(
             "../app_graphql.py",
@@ -69,7 +75,7 @@ from tests._bookshop import BOOKSHOP_DIRECTORY
         ),
         pytest.param(
             "../app_graphql.py",
-            "class _GetPublicationData_publication_Book(_GetPublicationData_publication_Book_Base, closed=True):\n    title: _builtins.str\n    pages: _builtins.int\n    isbn: _scalar.ISBN\n\n",
+            "class _GetPublicationData_publication_Book(_GetPublicationData_publication_Book_Base, closed=True):\n    title: _builtins.str\n    pages: _builtins.int\n    isbn: _schema.ISBN\n\n",
             id="a member gathers the fields of every condition it meets",
         ),
         pytest.param(
@@ -104,7 +110,7 @@ from tests._bookshop import BOOKSHOP_DIRECTORY
         ),
         pytest.param(
             "../app_graphql.py",
-            'lookup: _input.BookLookup\n    """An identifier or an ISBN."""',
+            'lookup: _schema.BookLookup\n    """An identifier or an ISBN."""',
             id="a variable's description is its docstring",
         ),
         pytest.param(
@@ -134,9 +140,9 @@ def test_the_bookshop_package_holds(
     ("path", "snippet"),
     [
         pytest.param(
-            "schema/input.py", "RestockInput", id="an input type no operation reaches"
+            "schema.py", "RestockInput", id="an input type no operation reaches"
         ),
-        pytest.param("schema/enum.py", "Membership", id="an enum no operation reaches"),
+        pytest.param("schema.py", "Membership", id="an enum no operation reaches"),
         pytest.param(
             "../app_graphql.py",
             "subscription OnOrderStatusChanged($orderId§",
@@ -273,27 +279,31 @@ def test_a_document_goes_on_the_wire_triple_quoted_without_its_client_directive(
         pytest.param(
             'query Q($withGenre: Boolean!) { book(lookup: {id: "1"}) { title genre @include(if: $withGenre) never: genre @include(if: false) always: genre @skip(if: false) } }',
             [
-                "    title: _builtins.str\n    genre: _typing.NotRequired[_enum.Genre]\n    always: _enum.Genre\n"
+                "    title: _builtins.str\n    genre: _typing.NotRequired[_schema.Genre]\n    always: _schema.Genre\n"
             ],
             ["never: _"],
             id="a field skip or include may leave out is not required",
         ),
         pytest.param(
             'query Q($withTitle: Boolean!) { book(lookup: {id: "1"}) { genre ...Title @include(if: $withTitle) } } fragment Title on Book { title }',
-            ["    genre: _enum.Genre\n    title: _typing.NotRequired[_builtins.str]\n"],
+            [
+                "    genre: _schema.Genre\n    title: _typing.NotRequired[_builtins.str]\n"
+            ],
             ["(Title)", "(Title,", ", Title)", ", Title,"],
             id="a conditional spread is expanded, its keys not required",
         ),
         pytest.param(
             'query Q($withGenre: Boolean!) { book(lookup: {id: "1"}) { title ... @include(if: $withGenre) { title genre } } }',
-            ["    title: _builtins.str\n    genre: _typing.NotRequired[_enum.Genre]\n"],
+            [
+                "    title: _builtins.str\n    genre: _typing.NotRequired[_schema.Genre]\n"
+            ],
             [],
             id="a field selected unconditionally somewhere is required",
         ),
         pytest.param(
             'query Q { __type(name: "Book") { kind } }',
             ["kind: _typing.Literal['SCALAR', 'OBJECT',"],
-            ["_enum."],
+            ["_schema."],
             id="an introspection enum is spelled where it is selected",
         ),
         pytest.param(
@@ -352,7 +362,7 @@ def test_a_document_goes_on_the_wire_triple_quoted_without_its_client_directive(
             [
                 "class _QData_order(_compat.TypedDict, closed=True):\n    id: _builtins.str"
             ],
-            ["_enum", "_input"],
+            ["_schema"],
             id="an operation reaching no enum and no input imports neither",
         ),
     ],
@@ -395,12 +405,25 @@ def test_a_description_is_the_docstring_of_what_it_describes_whatever_its_quotes
     ]
 
 
-def test_the_package_needs_nothing_but_the_standard_library(tmp_path: Path) -> None:
+def test_every_generated_module_needs_nothing_but_the_standard_library(
+    bookshop_files: Mapping[PurePosixPath, bytes], tmp_path: Path
+) -> None:
     if sys.version_info < (3, 15):
         spec = find_spec("typing_extensions")
         assert spec is not None
         assert spec.origin is not None
         shutil.copy(spec.origin, tmp_path)
+
+    # Every file `generate()` writes, sibling modules included.
+    modules = [
+        os.path.relpath(
+            BOOKSHOP_GENERATED_PACKAGE_DIRECTORY / path.with_suffix(""),
+            BOOKSHOP_DIRECTORY.parent,
+        )
+        .replace(os.sep, ".")
+        .removesuffix(".__init__")
+        for path in bookshop_files
+    ]
 
     subprocess.run(
         [
@@ -410,9 +433,9 @@ def test_the_package_needs_nothing_but_the_standard_library(tmp_path: Path) -> N
             # No `site`, and so no site-packages.
             "-S",
             str(Path(__file__).parent / "__resources__" / "import_every_module.py"),
-            "bookshop.graphql",
             str(BOOKSHOP_DIRECTORY.parent),
             str(tmp_path),
+            *modules,
         ],
         check=True,
     )

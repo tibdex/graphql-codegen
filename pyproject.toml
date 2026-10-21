@@ -5,7 +5,7 @@ requires = ["uv-build>=0.12.23,<0.14"]
 [project]
 authors = [{ name = "Thibault Derousseaux" }]
 classifiers = [
-  "Development Status :: 4 - Beta",
+  "Development Status :: 5 - Production/Stable",
   "Intended Audience :: Developers",
   "Programming Language :: Python :: 3 :: Only",
   # The versions CI tests.
@@ -35,7 +35,7 @@ license-files = ["LICENSE"]
 name = "graphql-codegen"
 readme = "README.md"
 requires-python = ">=3.12"
-version = "0.2.1"
+version = "1.0.0"
 
 [project.optional-dependencies]
 # Only reading a YAML graphql-config file needs it.

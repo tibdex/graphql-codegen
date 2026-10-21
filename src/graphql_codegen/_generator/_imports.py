@@ -8,22 +8,18 @@ from graphql_codegen._generator._naming import (
     ABC,
     BUILTINS,
     COMPAT,
-    ENUM,
     INJECTION,
-    INPUT,
     OMITTED,
     OPERATION_TYPE,
     REFLECTION,
     RUNTIME,
-    SCALAR,
+    SCHEMA,
     TYPING,
-    SchemaSpellings,
 )
 from graphql_codegen._generator.spelling import ast_str
 
-SCHEMA_PACKAGE = "schema"
+SCHEMA_MODULE = "schema"
 DOCUMENT_PACKAGE = "document"
-SCALAR_MODULE = "_scalar"
 INJECTION_MODULE = "injection"
 RUNTIME_PACKAGE = "runtime"
 
@@ -74,7 +70,6 @@ def helper_imports(
     /,
     *,
     module: GeneratedModule,
-    schema_spellings: SchemaSpellings,
 ) -> list[ast.stmt]:
     used = {
         node.id
@@ -100,6 +95,7 @@ def helper_imports(
         (REFLECTION, RUNTIME_PACKAGE, "_reflection"),
         (RUNTIME, None, RUNTIME_PACKAGE),
         (OMITTED, RUNTIME_PACKAGE, "OMITTED"),
+        (SCHEMA, None, SCHEMA_MODULE),
     ):
         if ast_str(helper) in used:
             imports.append(
@@ -107,26 +103,5 @@ def helper_imports(
                     submodule, name=imported, alias=ast_str(helper), module=module
                 )
             )
-
-    for helper, schema_module in (
-        (ENUM, schema_spellings.enum_module),
-        (INPUT, schema_spellings.input_module),
-    ):
-        if ast_str(helper) in used:
-            imports.append(
-                _from_package(
-                    SCHEMA_PACKAGE,
-                    name=schema_module,
-                    alias=ast_str(helper),
-                    module=module,
-                ),
-            )
-
-    if ast_str(SCALAR) in used:
-        imports.append(
-            _from_package(
-                None, name=SCALAR_MODULE, alias=ast_str(SCALAR), module=module
-            )
-        )
 
     return imports

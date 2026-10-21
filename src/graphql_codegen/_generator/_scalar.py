@@ -22,9 +22,9 @@ def check_scalars(scalars: Mapping[str, Scalar], /, *, schema: GraphQLSchema) ->
             raise ValueError(f"Expected `{scalar_name}` to be a scalar of the schema.")  # noqa: TRY004
 
 
-def emit_scalars(
+def emit_scalar_aliases(
     scalars: Mapping[str, Scalar], /, *, spellings: Mapping[str, SettledSpelling]
-) -> list[ast.stmt]:
+) -> tuple[list[ast.ImportFrom], dict[str, ast.stmt]]:
     imported: dict[Import, PendingSpelling] = {}
 
     def reference(path: Reference, /) -> ast.expr:
@@ -38,7 +38,7 @@ def emit_scalars(
             case _ as never:
                 assert_never(never)
 
-    body: list[ast.stmt] = []
+    aliases: dict[str, ast.stmt] = {}
 
     for scalar_name, scalar in sorted(scalars.items()):
         if scalar.codec is None:
@@ -63,7 +63,7 @@ def emit_scalars(
                 ),
             )
 
-        body.append(type_alias(spellings[scalar_name], value))
+        aliases[scalar_name] = type_alias(spellings[scalar_name], value)
 
     imports = [
         ast.ImportFrom(
@@ -73,4 +73,4 @@ def emit_scalars(
         )
         for import_, spelling in imported.items()
     ]
-    return [*imports, *body]
+    return imports, aliases
