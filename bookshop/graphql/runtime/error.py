@@ -21,20 +21,18 @@ class ProtocolError(Error):
 
 @final
 class UnexpectedNullError(Error):
-    """A field marked `@nonNull` was null.
+    """A field marked `@nonNull` came back `null`."""
 
-    `path` names the exact value, list indices included.
-    """
+    @property
+    def path(self) -> Sequence[str | int]:
+        """The keys and list indices leading from the root of the data to the `null`, as in a GraphQL error's `path`."""
+        return self._path
 
     def __init__(self, path: list[str | int], /) -> None:
         """Private."""
         # Each level the error unwinds through prepends its key or index.
         self._path: Final = path
         super().__init__()
-
-    @property
-    def path(self) -> Sequence[str | int]:
-        return self._path
 
     @override
     def __str__(self) -> str:

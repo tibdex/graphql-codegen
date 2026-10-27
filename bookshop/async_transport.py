@@ -6,7 +6,6 @@ from typing import Final, Literal
 import httpx2
 
 from bookshop.graphql.runtime import Request
-from bookshop.transport import INJECTORS
 
 GRAPHQL_RESPONSE: Final = "application/graphql-response+json"
 http: Final = httpx2.AsyncClient(
@@ -24,10 +23,10 @@ async def send[Data](
     *,
     timeout: float | None = None,
 ) -> Data:
-    prepared = request.prepare(injectors=INJECTORS)
+    prepared = request.prepare()
     response = await http.post("/graphql", content=bytes(prepared), timeout=timeout)
 
-    # GraphQL over HTTP sends a request error as a response with a 4xx status.
+    # GraphQL over HTTP sends a request error as a response with a 4xx or 5xx status.
     if not response.headers.get("Content-Type", "").startswith(GRAPHQL_RESPONSE):
         response.raise_for_status()
 
@@ -37,7 +36,7 @@ async def send[Data](
 async def subscribe[Data](
     request: Request[Literal["subscription"], Data], /
 ) -> AsyncGenerator[Data, None]:
-    prepared = request.prepare(injectors=INJECTORS)
+    prepared = request.prepare()
 
     # Closing the generator leaves the block, closes the connection, and ends the subscription.
     async with http.sse("/graphql", method="POST", content=bytes(prepared)) as events:

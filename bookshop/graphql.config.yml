@@ -11,7 +11,7 @@ extensions:
     # Name pattern of each document's module, written next to the document.
     documentSiblingModule: "{document}_graphql"
     # Values an injector supplies, which no call can pass.
-    injectorNames: [idempotencyKey]
+    injectorNames: [customer, idempotencyKey]
     # Client directive asserting a schema-nullable field is not null.
     nonNullDirectiveName: nonNull
     # Each custom scalar's Python type, with its codec if any.

@@ -11,7 +11,7 @@ from bookshop.graphql.runtime import (
     Operation as BookshopOperation,
     merge as merge_bookshop,
 )
-from bookshop.transport import INJECTORS
+from bookshop.injectors import INJECTORS
 from graphql_codegen._generator._merge import (
     print_merge_template,
 )

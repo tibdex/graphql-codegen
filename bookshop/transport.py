@@ -5,13 +5,11 @@ from http.client import HTTPResponse
 from typing import Final, Literal
 from urllib.error import HTTPError
 from urllib.request import Request as HTTPRequest, urlopen
-from uuid import uuid4
 
-from bookshop.graphql.injection import injectors
 from bookshop.graphql.runtime import Request
+from bookshop.injectors import INJECTORS
 
 BASE_URL: Final = "https://bookshop.example"
-INJECTORS: Final = injectors({"idempotencyKey": uuid4})
 ATTEMPTS: Final = 3
 
 
@@ -43,15 +41,19 @@ def send[Data](
 
     # A connection per call keeps the example simple: an HTTP library, such as httpx2 in `async_transport.py`, would pool them.
     while True:
+        # Declared, since mypy types a variable from its first assignment alone.
+        response: HTTPResponse | HTTPError
+
         try:
             response = _post(
                 "/graphql",
                 request_body,
-                accept="application/graphql-response+json",
+                # Falls back to the plain JSON media type for a server predating the GraphQL one.
+                accept="application/graphql-response+json, application/json;q=0.9",
                 timeout=timeout,
             )
         except HTTPError as error:
-            # GraphQL over HTTP sends a request error as a response with a 4xx status.
+            # GraphQL over HTTP sends a request error as a response with a 4xx or 5xx status.
             if error.headers.get_content_type() != "application/graphql-response+json":
                 raise
 

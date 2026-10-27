@@ -189,6 +189,7 @@ class DataTypeEmitter:
                 spelling=spelling,
                 path=path,
                 fragment_reference=fragment_reference,
+                inheritable=inheritable,
             )
 
         statements: list[ast.stmt] = []
@@ -246,8 +247,12 @@ class DataTypeEmitter:
         spelling: Spelling,
         path: Sequence[str],
         fragment_reference: Callable[[str], ast.expr],
+        inheritable: bool,
     ) -> list[ast.stmt]:
-        """One member per concrete type, each gathering the fields of every condition its type satisfies, so that nested conditions need no case of their own."""
+        """One member per concrete type, each gathering the fields of every condition its type satisfies, so that nested conditions need no case of their own.
+
+        A fragment's members are open like a fragment's class, so that an operation's matching member is assignable to the fragment's union.
+        """
         statements: list[ast.stmt] = []
         members: list[PendingSpelling] = []
 
@@ -261,7 +266,7 @@ class DataTypeEmitter:
                     spelling=member,
                     path=member_path,
                     fragment_reference=fragment_reference,
-                    inheritable=False,
+                    inheritable=inheritable,
                 ),
             )
 
@@ -307,6 +312,20 @@ class DataTypeEmitter:
         return replace(selection_set, fields=tuple(fields), fragment_names=())
 
     def _normalize(self, selection_set: SelectionSet, /) -> SelectionSet:
+        """A condition on a concrete type is met or not, so it folds into the selection rather than branching it.
+
+        Expanding a fragment may bring conditions along, each round folding the ones the last brought.
+        """
+        normalized = self._settle_spreads(selection_set)
+
+        while normalized.conditions and isinstance(normalized.type, GraphQLObjectType):
+            normalized = self._settle_spreads(
+                self._selection_on(normalized, normalized.type)
+            )
+
+        return normalized
+
+    def _settle_spreads(self, selection_set: SelectionSet, /) -> SelectionSet:
         """A spread is inherited when its fragment is a class and every key it shares with the node is the same one, and expanded otherwise, which is always correct, only less reused."""
         fields = list(selection_set.fields)
         conditions: list[TypeCondition] = list(selection_set.conditions)

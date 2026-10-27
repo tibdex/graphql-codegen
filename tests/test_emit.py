@@ -213,6 +213,20 @@ def test_a_document_goes_on_the_wire_triple_quoted_without_its_client_directive(
             id="a fragment on a union is expanded into its members",
         ),
         pytest.param(
+            'query Q { search(text: "Austen") { ...Result } } fragment Result on SearchResult { __typename ... on Author { name } }',
+            ["class _Result_Author(_Result_Author_Base):\n    name: _builtins.str"],
+            ["class _Result_Author(_Result_Author_Base, closed=True)"],
+            id="a fragment on a union has open members, so that a spread's member is assignable to it",
+        ),
+        pytest.param(
+            'query Q { publication(id: "1") { title ...Length } } fragment Length on Printed { pageCount ... on Book { isbn } }',
+            [
+                "class _QData_publication_Book(_QData_publication_Book_Base, closed=True):\n    title: _builtins.str\n    pageCount: _builtins.int\n    isbn: _builtins.object",
+            ],
+            ["_Book_Book"],
+            id="a condition an expanded fragment brings folds into the concrete member meeting it",
+        ),
+        pytest.param(
             'query Q { book(lookup: {id: "1"}) { ...Title ...Title } } fragment Title on Book { title }',
             ["    book: Title | None\n"],
             ["class _QData_book("],

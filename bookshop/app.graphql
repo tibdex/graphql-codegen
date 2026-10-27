@@ -38,6 +38,18 @@ query Search($text: String!) {
   }
 }
 
+"The first books, with their genre when asked for."
+query ListTitles($genres: [Genre!], $first: Int, $withGenres: Boolean! = false) {
+  books(genres: $genres, first: $first) {
+    ...TitleCard
+  }
+}
+
+fragment TitleCard on Book {
+  title
+  genre @include(if: $withGenres)
+}
+
 query ListBooks($filter: BookFilter, $first: Int) {
   books(filter: $filter, first: $first) {
     ...BookCard
@@ -60,9 +72,31 @@ query GetPublication($id: ID!) {
   }
 }
 
+query GetPages($id: ID!) {
+  publication(id: $id) {
+    ...PrintedLength
+  }
+}
+
+"The length of a publication printed on paper."
+fragment PrintedLength on Printed {
+  title
+  pages: pageCount
+  ... on Book {
+    isbn
+  }
+}
+
 query GetSavedSearch($name: String!) {
   savedSearch(name: $name) {
     value
+  }
+}
+
+query ListOrders($customer: ID) {
+  orders(customer: $customer) {
+    id
+    status
   }
 }
 

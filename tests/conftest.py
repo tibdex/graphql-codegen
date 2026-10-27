@@ -33,7 +33,7 @@ def files_fixture(_bookshop_args: _Params) -> Mapping[PurePosixPath, bytes]:
     return generate(**_bookshop_args)
 
 
-@pytest.fixture(name="assert_type_checks", params=["ty", "pyright", "pyrefly"])
+@pytest.fixture(name="assert_type_checks", params=["mypy", "pyright", "pyrefly", "ty"])
 def assert_type_checks_fixture(
     request: pytest.FixtureRequest,
 ) -> Callable[[Path], None]:
@@ -45,6 +45,7 @@ def assert_type_checks_fixture(
 
     def assert_type_checks(package: Path, /) -> None:
         arguments = {
+            "mypy": ["--strict", "--python-executable", sys.executable],
             "ty": [
                 "check",
                 "--python",

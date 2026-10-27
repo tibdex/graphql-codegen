@@ -13,7 +13,7 @@ from .injection import _Injectors
 class Request[Type: OperationType, Data](ABC):
     def __init__(self, *, operation_type: Type) -> None:
         """Private."""
-        self._operation_type: Final = operation_type
+        self.operation_type: Final = operation_type
 
     @abstractmethod
     def prepare(self, *, injectors: _Injectors | None = None) -> PreparedRequest[Data]:

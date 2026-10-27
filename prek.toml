@@ -21,9 +21,9 @@ types = ["python"]
 require_serial = true
 
 [[repos.hooks]]
-id = "ty"
-name = "ty check"
+id = "uv-check"
+name = "uv check"
 language = "system"
-entry = "uv run ty check"
+entry = "uv check --preview-features check-command"
 pass_filenames = false
 always_run = true

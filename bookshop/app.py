@@ -2,46 +2,99 @@ from collections.abc import Sequence
 from contextlib import closing
 from datetime import datetime
 from decimal import Decimal
-from typing import assert_never, assert_type
+from typing import Literal, assert_never, assert_type
 
 from bookshop.app_graphql import (
+    BookCard,
     CancelOrder,
     GetBook,
     GetBookData,
-    GetBookVariables,
+    GetPages,
     GetPublication,
     GetPublicationData,
     GetSavedSearch,
     ListBooks,
+    ListOrders,
+    ListTitles,
+    ListTitlesVariables,
     OnOrderStatusChanged,
     PlaceOrder,
+    PrintedLength,
     Search,
     SearchData,
+    TitleCard,
 )
 from bookshop.get_order_graphql import GetOrder, GetOrderData
-from bookshop.graphql.runtime import ExecutionError, UnexpectedNullError, merge
-from bookshop.graphql.schema import Address, BookFilter, OrderStatus
+from bookshop.graphql.runtime import ExecutionError, OperationRequest, merge
+from bookshop.graphql.schema import Address, BookFilter, Genre, OrderStatus
 from bookshop.scalar import ISBN
 from bookshop.transport import send, subscribe
 
 
-def describe(isbn: ISBN, /) -> str:
-    variables: GetBookVariables = {"lookup": {"isbn": isbn}}
+def titles(
+    *genres: Genre, first: int | None = None, with_genres: bool | None = None
+) -> list[str]:
+    # `$first` is nullable and `$withGenres` has a default, so both keys are `NotRequired`.
+    variables: ListTitlesVariables = {
+        # A GraphQL list variable takes any `Sequence`, such as this `tuple`.
+        "genres": genres,
+    }
 
-    # Caught only to show what the error carries.
-    # You would usually let the error propagate since a null here is a bug.
-    try:
-        data = send(GetBook(variables))
-    except UnexpectedNullError as error:
-        assert error.path == ["book"]
-        assert error.__notes__ == [f"Raised by `GetBook` with variables {variables!r}."]
-        return "No such book."
+    # A key left out sends nothing, while `first: None` would send `null`.
+    if first is not None:
+        variables["first"] = first
 
-    # No `None` check: `@nonNull` took `| None` out of the type.
-    book = data["book"]
+    if with_genres is not None:
+        variables["withGenres"] = with_genres
 
-    # `@nonNull` only covers `book`, so `author` may still be `None`.
+    data = send(ListTitles(variables))
+    # A GraphQL list field in data is a Python `list`, as JSON decodes it.
+    assert_type(data["books"], list[TitleCard])
+    labels: list[str] = []
+
+    for book in data["books"]:
+        # Selected under `@include`, `genre` is a `NotRequired` key too.
+        if "genre" in book:
+            assert_type(book["genre"], Genre)
+            labels.append(f"{book['title']} ({book['genre'].lower()})")
+        else:
+            labels.append(book["title"])
+
+    return labels
+
+
+def card(book: BookCard, /) -> str:
     author = book["author"]
+    by = "an anthology" if author is None else f"by {author['name']}"
+    return f"{book['title']}, {by}"
+
+
+def catalog(first: int, /) -> list[str]:
+    data = send(ListBooks({"first": first}))
+    return [card(book) for book in data["books"]]
+
+
+def printed_length(printed: PrintedLength, /) -> str:
+    assert_type(printed["__typename"], Literal["Book", "Magazine"])
+    return f"{printed['title']} has {printed['pages']} pages."
+
+
+def pages(publication_id: str, /) -> str:
+    data = send(GetPages({"id": publication_id}))
+    publication = data["publication"]
+
+    if publication is None or "pages" not in publication:
+        return "No pages."
+
+    return printed_length(publication)
+
+
+def describe(isbn: ISBN, /) -> str:
+    data = send(GetBook({"lookup": {"isbn": isbn}}))
+    book = data["book"]
+    # `@nonNull` took `| None` out of `book`'s type, so no check is needed before indexing it.
+    author = book["author"]
+    # `@nonNull` covers `book` alone, so `author` keeps its `| None`.
     by = "an anthology" if author is None else f"by {author['name']}"
 
     assert_type(book["price"], Decimal)
@@ -49,9 +102,12 @@ def describe(isbn: ISBN, /) -> str:
 
 
 def book_and_similar(isbn: ISBN, text: str, /) -> tuple[str, list[str]]:
-    # Two queries in one request.
+    # Two queries in a single transport request.
     book_data, search_data = send(
-        merge(GetBook({"lookup": {"isbn": isbn}}), Search({"text": text}))
+        merge(
+            GetBook({"lookup": {"isbn": isbn}}),
+            Search({"text": text}),
+        )
     )
     assert_type(book_data, GetBookData)
     assert_type(search_data, SearchData)
@@ -66,15 +122,14 @@ def book_and_similar(isbn: ISBN, text: str, /) -> tuple[str, list[str]]:
 def look_up(
     isbns: Sequence[ISBN], publication_ids: Sequence[str], /
 ) -> tuple[GetBookData | GetPublicationData, ...]:
-    # Any number of queries in one request.
-    return send(  # ty: ignore[unsound-return-statement]  # Pyright and Pyrefly already infer this.
-        merge(
-            [
-                *(GetBook({"lookup": {"isbn": isbn}}) for isbn in isbns),
-                *(GetPublication({"id": id_}) for id_ in publication_ids),
-            ]
-        )
-    )
+    # Any number of queries in a single transport request.
+    queries: list[
+        OperationRequest[Literal["query"], GetBookData | GetPublicationData]
+    ] = [
+        *(GetBook({"lookup": {"isbn": isbn}}) for isbn in isbns),
+        *(GetPublication({"id": id_}) for id_ in publication_ids),
+    ]
+    return send(merge(queries))
 
 
 def run_saved_search(name: str, /) -> list[str]:
@@ -130,7 +185,7 @@ def cheaper_than(limit: Decimal, /) -> list[str]:
     for book in data["books"]:
         price = book["price"]
         assert_type(price, Decimal)
-        labels.append(f"{book['title']}: {price:.2f}")
+        labels.append(f"{card(book)}: {price:.2f}")
 
     return labels
 
@@ -145,6 +200,11 @@ def order(book_id: str, address: Address, /) -> str:
     assert_type(order["total"], Decimal)
     assert_type(order["placedAt"], datetime)
     return f"Order {order['id']}: {order['total']:.2f} at {order['placedAt']:%H:%M}."
+
+
+def order_ids() -> list[str]:
+    data = send(ListOrders({}))
+    return [order["id"] for order in data["orders"]]
 
 
 def track(order_id: str, /) -> str:

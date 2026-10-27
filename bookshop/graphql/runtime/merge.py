@@ -27,7 +27,7 @@ class _MergedRequest[Type: OperationType, Data](Request[Type, Data]):
         if not requests:
             raise ValueError("Cannot merge no request.")
 
-        super().__init__(operation_type=requests[0]._operation_type)
+        super().__init__(operation_type=requests[0].operation_type)
         self._requests: Final = tuple(requests)
 
     @override
@@ -39,7 +39,7 @@ class _MergedRequest[Type: OperationType, Data](Request[Type, Data]):
         # Only `merge()`'s overloads know the tuple's type.
         return cast(
             PreparedRequest[Data],
-            _prepare_merged(self._operation_type, self._requests, injectors=injectors),
+            _prepare_merged(self.operation_type, self._requests, injectors=injectors),
         )
 
 
