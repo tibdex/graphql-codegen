@@ -17,11 +17,11 @@ classifiers = [
   "Typing :: Typed",
 ]
 dependencies = [
-  "graphql-core>=3.3.0",
+  "graphql-core>=3.3.1",
   # Python 3.15 is the first whose standard library has all it provides.
   "typing-extensions>=4.16.0; python_version < '3.15'",
 ]
-description = "Turn a GraphQL schema and your operations into a typed Python package with no imposed transport, no runtime dependencies, and no runtime validation"
+description = "Compile GraphQL documents into a typed Python package with no imposed transport, no runtime dependencies, and no redundant validation"
 keywords = [
   "client",
   "code generation",
@@ -35,7 +35,7 @@ license-files = ["LICENSE"]
 name = "graphql-codegen"
 readme = "README.md"
 requires-python = ">=3.12"
-version = "1.0.0"
+version = "1.0.1"
 
 [project.optional-dependencies]
 # Only reading a YAML graphql-config file needs it.
@@ -53,6 +53,7 @@ Issues = "https://github.com/tibdex/graphql-codegen/issues"
 dev = [
   "coverage",
   "httpx2",          # The bookshop's transport.
+  "mypy",
   "pyright[nodejs]", # With the Node.js it runs on, rather than whichever is installed.
   "pyrefly",
   "pytest",

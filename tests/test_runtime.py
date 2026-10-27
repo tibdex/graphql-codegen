@@ -1,6 +1,6 @@
 import json
 from collections.abc import Callable
-from typing import Annotated, Any, Final, Literal
+from typing import Annotated, Any, Final, Literal, assert_type
 
 import pytest
 
@@ -11,6 +11,7 @@ from graphql_codegen.runtime import (
     OperationRequest,
     ProtocolError,
     RequestError,
+    merge,
 )
 from graphql_codegen.runtime._compat import TypedDict
 from graphql_codegen.runtime._reflection import NON_NULL
@@ -48,6 +49,13 @@ def test_a_request_s_repr_is_how_it_is_written(
     request_: OperationRequest[Literal["query"], object], expected: str
 ) -> None:
     assert repr(request_) == expected
+
+
+def test_a_request_tells_its_operation_type_at_runtime_too() -> None:
+    request = _LIST_BOOKS({})
+    assert_type(request.operation_type, Literal["query"])
+    assert request.operation_type == "query"
+    assert merge(request, request).operation_type == "query"
 
 
 def test_a_request_is_the_spec_s_json_envelope() -> None:

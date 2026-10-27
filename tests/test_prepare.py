@@ -16,6 +16,7 @@ from bookshop.app_graphql import (
 )
 from bookshop.graphql.injection import injectors
 from bookshop.graphql.runtime import (
+    OMITTED,
     ExecutionError,
     Request,
     RequestError,
@@ -34,7 +35,9 @@ _BOOK: Final = {**_CARD, "isbn": "9780141439518", "pageCount": 249}
 _GET_BOOK: Final = GetBook({"lookup": {"isbn": ISBN("9780141439518")}})
 _ON_STATUS_CHANGED: Final = OnOrderStatusChanged({"orderId": "o1"})
 _KEY: Final = UUID(int=0)
-_INJECTORS: Final = injectors({"idempotencyKey": lambda: _KEY})
+_INJECTORS: Final = injectors(
+    {"idempotencyKey": lambda: _KEY, "customer": lambda: OMITTED}
+)
 
 
 def _parse[Data](request: Request[Any, Data], payload: object, /) -> Data:
@@ -57,7 +60,7 @@ def test_creating_a_request_has_no_side_effect() -> None:
     }
 
 
-def test_variables_and_operation_types_are_checked_statically() -> None:
+def test_a_misuse_is_caught_by_the_type_checker_alone() -> None:
     # Each suppression is checked as used: nothing is validated at runtime.
     assert isinstance(GetBook({"lookup": 1}), Request)  # ty: ignore[invalid-argument-type]
     # A merge takes one operation type, never a subscription, and a subscription reader takes no query.
@@ -113,7 +116,7 @@ def test_a_merge_is_a_request_and_a_sequence_merges_into_a_tuple_of_its_common_d
 
 def test_an_operation_injecting_a_value_cannot_be_prepared_without_injectors() -> None:
     with pytest.raises(
-        ValueError, match="without injectors: it injects idempotencyKey"
+        ValueError, match="without injectors: it injects customer, idempotencyKey"
     ):
         CancelOrder({"input": {"order": "o1"}}).prepare()
 

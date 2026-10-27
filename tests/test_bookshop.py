@@ -12,24 +12,29 @@ import httpx2
 import pytest
 
 import bookshop.async_transport
+import bookshop.injectors
 import bookshop.transport
 from bookshop.app import (
     book_and_similar,
     cancel,
+    catalog,
     cheaper_than,
     describe,
     length,
     look_up,
     order,
+    order_ids,
+    pages,
     run_saved_search,
     status_label,
+    titles,
     track,
 )
 from bookshop.async_app import title, watch as watch_async
 from bookshop.get_order_graphql import GetOrder
 from bookshop.graphql.injection import injectors
-from bookshop.graphql.runtime import RequestError
-from bookshop.graphql.schema import Address, OrderStatus
+from bookshop.graphql.runtime import RequestError, UnexpectedNullError
+from bookshop.graphql.schema import Address, Genre, OrderStatus
 from bookshop.scalar import ISBN
 from tests._bookshop import BOOKSHOP_DIRECTORY
 from tests._server import PostHandler
@@ -74,7 +79,14 @@ def mocked_http_fixture(monkeypatch: pytest.MonkeyPatch) -> Callable[[_Handle], 
 @pytest.fixture(name="fixed_key")
 def fixed_key_fixture(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        bookshop.transport, "INJECTORS", injectors({"idempotencyKey": lambda: _KEY})
+        bookshop.transport,
+        "INJECTORS",
+        injectors(
+            {
+                "idempotencyKey": lambda: _KEY,
+                "customer": bookshop.injectors.customer,
+            }
+        ),
     )
 
 
@@ -175,7 +187,13 @@ def test_describing_a_book(bookshop_server: _StartServer) -> None:
 def test_describing_a_missing_book(bookshop_server: _StartServer) -> None:
     bookshop_server(_answering(lambda _request: {"data": {"book": None}}))
 
-    assert describe(ISBN("9780000000000")) == "No such book."
+    with pytest.raises(UnexpectedNullError) as error_info:
+        describe(ISBN("9780000000000"))
+
+    assert error_info.value.path == ["book"]
+    assert error_info.value.__notes__ == [
+        "Raised by `GetBook` with variables {'lookup': {'isbn': '9780000000000'}}."
+    ]
 
 
 def test_a_book_and_similar_publications_come_in_one_request(
@@ -262,6 +280,25 @@ def test_telling_a_publication_s_length(
 
 
 @pytest.mark.parametrize(
+    ("publication", "description"),
+    [
+        pytest.param(
+            {"__typename": "Magazine", "title": "The Economist", "pages": 80},
+            "The Economist has 80 pages.",
+            id="printed",
+        ),
+        pytest.param({"__typename": "Audiobook"}, "No pages.", id="an audiobook"),
+    ],
+)
+def test_counting_a_publication_s_pages(
+    publication: object, description: str, bookshop_server: _StartServer
+) -> None:
+    bookshop_server(_answering(lambda _request: {"data": {"publication": publication}}))
+
+    assert pages("p1") == description
+
+
+@pytest.mark.parametrize(
     ("status", "label"),
     [
         pytest.param("SHIPPED", "On its way", id="a member known at codegen"),
@@ -272,6 +309,61 @@ def test_telling_a_publication_s_length(
 )
 def test_labeling_an_order_status(status: str, label: str) -> None:
     assert status_label(cast(OrderStatus, status)) == label
+
+
+@pytest.mark.parametrize(
+    ("genres", "first", "with_genres", "book", "label", "variables"),
+    [
+        pytest.param(
+            (),
+            None,
+            None,
+            _BOOK,
+            "Persuasion",
+            {"genres": []},
+            id="defaults",
+        ),
+        pytest.param(
+            ("FICTION",),
+            3,
+            True,
+            {**_BOOK, "genre": "FICTION"},
+            "Persuasion (fiction)",
+            {"genres": ["FICTION"], "withGenres": True, "first": 3},
+            id="a genre, a count, and genres shown",
+        ),
+    ],
+)
+def test_listing_titles_sends_only_the_given_count(
+    *,
+    genres: tuple[Genre, ...],
+    first: int | None,
+    with_genres: bool | None,
+    book: object,
+    label: str,
+    variables: object,
+    bookshop_server: _StartServer,
+) -> None:
+    requests: list[Mapping[str, object]] = []
+
+    def respond(request: Mapping[str, object], /) -> object:
+        requests.append(request)
+        return {"data": {"books": [book]}}
+
+    bookshop_server(_answering(respond))
+
+    assert titles(*genres, first=first, with_genres=with_genres) == [label]
+    assert [request["variables"] for request in requests] == [variables]
+
+
+def test_the_catalog_lists_cards(bookshop_server: _StartServer) -> None:
+    bookshop_server(
+        _answering(
+            lambda _request: {"data": {"books": [{**_BOOK, "genre": "FICTION"}]}}
+        )
+    )
+
+    assert catalog(1) == ["Persuasion, by Jane Austen"]
 
 
 def test_a_price_goes_out_and_comes_back_through_its_codec(
@@ -285,7 +377,7 @@ def test_a_price_goes_out_and_comes_back_through_its_codec(
 
     bookshop_server(_answering(respond))
 
-    assert cheaper_than(Decimal("10.00")) == ["Persuasion: 8.99"]
+    assert cheaper_than(Decimal("10.00")) == ["Persuasion, by Jane Austen: 8.99"]
     assert [request["variables"] for request in requests] == [
         {"filter": {"priceBelow": "10.00"}}
     ]
@@ -327,6 +419,29 @@ def test_an_order_gets_its_idempotency_key_injected(
             "idempotencyKey": str(_KEY),
         }
     }
+
+
+def test_listing_orders_names_the_customer_served(
+    bookshop_server: _StartServer,
+) -> None:
+    requests: list[Mapping[str, object]] = []
+
+    def respond(request: Mapping[str, object], /) -> object:
+        requests.append(request)
+        return {"data": {"orders": [_ORDER]}}
+
+    bookshop_server(_answering(respond))
+    token = bookshop.injectors.CURRENT_CUSTOMER.set("c1")
+
+    try:
+        assert order_ids() == ["o1"]
+    finally:
+        bookshop.injectors.CURRENT_CUSTOMER.reset(token)
+
+    assert order_ids() == ["o1"]
+    logged_in, guest = requests
+    assert logged_in["variables"] == {"customer": "c1"}
+    assert guest["variables"] == {}
 
 
 @pytest.mark.usefixtures("fixed_key")

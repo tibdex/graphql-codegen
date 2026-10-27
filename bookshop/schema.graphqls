@@ -17,8 +17,8 @@ type Query {
   "The book with this identifier or ISBN."
   book(lookup: BookLookup!): Book
 
-  "The books matching the filter, at most `first` of them."
-  books(filter: BookFilter, first: Int = 20): [Book!]!
+  "The books matching the filter, of any of the genres when given, at most `first` of them."
+  books(filter: BookFilter, genres: [Genre!], first: Int = 20): [Book!]!
 
   "The publication with this identifier."
   publication(id: ID!): Publication
@@ -28,6 +28,9 @@ type Query {
 
   "The order with this identifier."
   order(id: ID!): Order
+
+  "The orders of the customer to act for, the authenticated account itself when omitted."
+  orders(customer: ID): [Order!]!
 
   "The filter of the saved search with this name, exactly as it was saved."
   savedSearch(name: String!): BookFilterStruct
@@ -178,6 +181,8 @@ input BookFilter @oneOf {
 }
 
 input PlaceOrderInput {
+  "The customer to act for, the authenticated account itself when omitted."
+  customer: ID
   "Makes placing the same order twice harmless: the client sends a new one per order."
   idempotencyKey: UUID!
   lines: [OrderLineInput!]!
@@ -200,6 +205,8 @@ input Address {
 }
 
 input CancelOrderInput {
+  "The customer to act for, the authenticated account itself when omitted."
+  customer: ID
   "Makes canceling the same order twice harmless."
   idempotencyKey: UUID!
   order: ID!

@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.0
+      - uses: astral-sh/setup-uv@v10.3.2
       - run: uv run prek run --all-files --show-diff-on-failure
 
   test:
@@ -22,9 +22,15 @@ jobs:
       PYTHONWARNDEFAULTENCODING: "1"
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.0
+      - uses: astral-sh/setup-uv@v10.3.2
         with:
           python-version: ${{ matrix.python-version }}
       - run: uv run coverage run -m pytest
       - run: uv run coverage combine
       - run: uv run coverage report
+      # The development dependencies would mask an import of a package the generator does not declare.
+      - run: uvx --from '.[yaml]' graphql-codegen bookshop/graphql.config.yml
+      # A package generated differently without the development dependencies shows up as a diff here rather than as a failing import below.
+      - run: git diff --exit-code bookshop/graphql
+      # The development dependencies would also mask an import the generated package does not declare.
+      - run: uv run --isolated --no-project --with "typing-extensions; python_version < '3.15'" python -c "import bookshop.app"
