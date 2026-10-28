@@ -1,6 +1,7 @@
 import shutil
 import subprocess
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
@@ -20,7 +21,7 @@ from tests._bookshop import BOOKSHOP_DIRECTORY, BOOKSHOP_GENERATED_PACKAGE_DIREC
     ],
 )
 def test_the_cli_generates_the_committed_bookshop_package(
-    command: list[str], tmp_path: Path
+    command: Sequence[str], tmp_path: Path
 ) -> None:
     generated = (BOOKSHOP_GENERATED_PACKAGE_DIRECTORY.name, "*_graphql.py")
 

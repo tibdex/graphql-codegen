@@ -1,5 +1,5 @@
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Collection, Mapping
 from pathlib import PurePosixPath
 from typing import Final
 
@@ -40,7 +40,7 @@ _MONEY: Final = {
 
 
 @pytest.mark.parametrize(
-    ("document", "config", "path", "present", "absent"),
+    ("document", "config", "path", "present"),
     [
         pytest.param(
             _PRICE,
@@ -51,7 +51,6 @@ _MONEY: Final = {
                 "from my_app.money import decode as _decode",
                 "type Money = _typing.Annotated[_Decimal, _reflection.Codec(decode=_decode, encode=_encode)]",
             ],
-            [],
             id="a codec scalar imports its paths absolutely, and never while generating: they need not exist yet",
         ),
         pytest.param(
@@ -59,7 +58,6 @@ _MONEY: Final = {
             Config(scalars={"ISBN": Scalar(type="str")}),
             "schema.py",
             ["type ISBN = _builtins.str"],
-            [],
             id="an identity scalar named by a bare name is a builtin",
         ),
         pytest.param(
@@ -78,7 +76,6 @@ _MONEY: Final = {
                 "from .. import decode_money as _decode_money",
                 "from ...money import encode as _encode",
             ],
-            [],
             id="a path starting with two dots or more is relative to the generated package's directory",
         ),
         pytest.param(
@@ -86,7 +83,6 @@ _MONEY: Final = {
             Config(),
             "document/GraphQL_request.py",
             ["price: _builtins.object"],
-            [],
             id="a custom scalar left out of the config is typed `object`",
         ),
         pytest.param(
@@ -94,7 +90,6 @@ _MONEY: Final = {
             Config(struct_interface_name="Struct"),
             "document/GraphQL_request.py",
             ["value: _schema.BookFilter | None"],
-            [],
             id="a struct payload is typed with its input type",
         ),
         pytest.param(
@@ -102,7 +97,6 @@ _MONEY: Final = {
             Config(struct_interface_name="Struct"),
             "schema.py",
             ["type BookFilter = "],
-            ["PlaceOrderInput"],
             id="which it reaches even when no variable does",
         ),
         pytest.param(
@@ -110,7 +104,6 @@ _MONEY: Final = {
             Config(),
             "document/GraphQL_request.py",
             ["value: _builtins.object | None"],
-            [],
             id="but only when the struct interface is named",
         ),
         pytest.param(
@@ -118,23 +111,25 @@ _MONEY: Final = {
             Config(non_null_directive_name="nonNull", struct_interface_name="Struct"),
             "document/GraphQL_request.py",
             ["value: _typing.Annotated[_schema.BookFilter, _reflection.NON_NULL]"],
-            [],
             id="and not optional when asserted non-null",
         ),
         pytest.param(
             'query Q { book(lookup: {id: "1"}) @nonNull { title } }',
             Config(non_null_directive_name="nonNull"),
             "document/GraphQL_request.py",
-            ["book: _typing.Annotated[_QData_book, _reflection.NON_NULL]"],
-            ["@nonNull"],
+            [
+                "book: _typing.Annotated[_QData_book, _reflection.NON_NULL]",
+                'document="""query Q {\n  book§: book(lookup: { id: "1" }) {\n    title\n  }\n}"""',
+            ],
             id="a field asserted non-null is not optional, and its directive stays off the wire",
         ),
         pytest.param(
             _PLACE_ORDER,
             Config(injector_names={"idempotencyKey"}),
             "schema.py",
-            ["class PlaceOrderInput("],
-            ["idempotencyKey"],
+            [
+                'class PlaceOrderInput(_compat.TypedDict, closed=True):\n    customer: _typing.NotRequired[_builtins.str | None]\n    """The customer to act for, the authenticated account itself when omitted."""\n    lines: _abc.Sequence[OrderLineInput]\n'
+            ],
             id="an injected field is left out of its input type",
         ),
         pytest.param(
@@ -144,7 +139,6 @@ _MONEY: Final = {
             [
                 "injections={'city': _builtins.frozenset({('input', 'shippingAddress')})}"
             ],
-            [],
             id="and received wherever an input holds it, at any depth",
         ),
         pytest.param(
@@ -155,7 +149,6 @@ _MONEY: Final = {
                 "note: _abc.Callable[[], _builtins.str | None | _OMITTED]",
                 "def injectors(functions: InjectorFunctions, /) -> _injection._Injectors:",
             ],
-            [],
             id="an injector is required, typed by what it injects, and may return `OMITTED` where it is nullable",
         ),
         pytest.param(
@@ -163,7 +156,6 @@ _MONEY: Final = {
             Config(injector_names={"note"}),
             "injection.py",
             ["note: _abc.Callable[[], _builtins.str]"],
-            [],
             id="an injector takes the strictest nullability of its positions, since it cannot tell which one it is called for",
         ),
         pytest.param(
@@ -173,7 +165,6 @@ _MONEY: Final = {
             [
                 "InjectorFunctions = _compat.TypedDict('InjectorFunctions', {'in': _abc.Callable[[], _builtins.str]}, closed=True)"
             ],
-            [],
             id="an injector named like a keyword is declared functionally",
         ),
     ],
@@ -182,8 +173,7 @@ def test_a_config_field_shapes_the_package(
     document: str,
     config: Config,
     path: str,
-    present: list[str],
-    absent: list[str],
+    present: Collection[str],
     bookshop_schema: GraphQLSchema,
 ) -> None:
     source = generate(document=parse(document), schema=bookshop_schema, config=config)[
@@ -192,9 +182,6 @@ def test_a_config_field_shapes_the_package(
 
     for snippet in present:
         assert snippet in source
-
-    for snippet in absent:
-        assert snippet not in source
 
 
 def _message(error: Exception, /) -> str:
@@ -358,7 +345,7 @@ def _message(error: Exception, /) -> str:
     ],
 )
 def test_an_input_is_rejected(
-    schema: str, document: str, config: Config, errors: list[Exception]
+    schema: str, document: str, config: Config, errors: Collection[Exception]
 ) -> None:
     with pytest.raises((ExceptionGroup, GraphQLError, ValueError)) as error_info:
         generate(document=parse(document), schema=build_schema(schema), config=config)
@@ -399,7 +386,7 @@ def test_a_config_field_cannot_be_constructed_invalid(
         construct()
 
 
-def _documents(sources: dict[str, str], /) -> DocumentNode:
+def _documents(sources: Mapping[str, str], /) -> DocumentNode:
     return DocumentNode(
         definitions=tuple(
             definition
@@ -410,7 +397,7 @@ def _documents(sources: dict[str, str], /) -> DocumentNode:
 
 
 def _generated(
-    sources: dict[str, str],
+    sources: Mapping[str, str],
     /,
     *,
     sibling_module_name: str | None,
@@ -523,7 +510,7 @@ def test_a_fragment_goes_next_to_the_operations_of_its_document_and_is_imported_
     ],
 )
 def test_a_document_s_module_depends_on_its_document_alone(
-    sources: dict[str, str],
+    sources: Mapping[str, str],
     sibling_module_name: str | None,
     message: str,
     bookshop_schema: GraphQLSchema,

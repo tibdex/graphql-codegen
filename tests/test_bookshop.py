@@ -1,7 +1,7 @@
 import json
 import runpy
 from asyncio import run as run_async
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from decimal import Decimal
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
@@ -171,7 +171,7 @@ def test_a_request_error_is_read_whatever_its_status(
     ],
 )
 def test_watching_an_order_asynchronously_follows_its_statuses(
-    events: list[str], statuses: list[str], mocked_http: Callable[[_Handle], None]
+    events: Collection[str], statuses: list[str], mocked_http: Callable[[_Handle], None]
 ) -> None:
     mocked_http(lambda _request: _events(*events))
 

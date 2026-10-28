@@ -1,4 +1,5 @@
 import json
+from collections.abc import Collection
 from itertools import product
 from typing import Any
 
@@ -172,7 +173,9 @@ def test_a_lone_operation_is_sent_without_its_sigils(
         ),
     ],
 )
-def test_an_operation_merged_with_itself(source: str, snippets: list[str]) -> None:
+def test_an_operation_merged_with_itself(
+    source: str, snippets: Collection[str]
+) -> None:
     operation = _operation(source)
     query = _sent(merge(operation({}), operation({})))["query"]
 

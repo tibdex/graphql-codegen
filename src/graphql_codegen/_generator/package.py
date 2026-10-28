@@ -322,7 +322,7 @@ class PackageEmitter:
 
     def _module_source(
         self,
-        body: list[ast.stmt],
+        body: Sequence[ast.stmt],
         /,
         *,
         generated_module: GeneratedModule,

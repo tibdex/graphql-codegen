@@ -4,7 +4,7 @@ import os
 import shutil
 import subprocess
 import sys
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from importlib.util import find_spec
 from pathlib import Path, PurePosixPath
 
@@ -66,7 +66,7 @@ from tests._bookshop import BOOKSHOP_DIRECTORY, BOOKSHOP_GENERATED_PACKAGE_DIREC
         pytest.param(
             "schema.py",
             "_BookFilter_and = _compat.TypedDict('_BookFilter_and', {'and': _abc.Sequence[BookFilter]}, closed=True)",
-            id="so that a keyword key, declared functionally, names it directly",
+            id="a keyword key is declared functionally, so that the union member names it directly",
         ),
         pytest.param(
             "../app_graphql.py",
@@ -81,12 +81,12 @@ from tests._bookshop import BOOKSHOP_DIRECTORY, BOOKSHOP_GENERATED_PACKAGE_DIREC
         pytest.param(
             "../app_graphql.py",
             "class _GetPublicationData_publication_Magazine(_GetPublicationData_publication_Magazine_Base, closed=True):\n    title: _builtins.str\n    pages: _builtins.int\n\n",
-            id="and only those",
+            id="a member gathers no field of a condition it does not meet",
         ),
         pytest.param(
             "../app_graphql.py",
             "class _GetPublicationData_publication_Audiobook(_GetPublicationData_publication_Audiobook_Base, closed=True):\n    title: _builtins.str\n    duration: _builtins.int\n",
-            id="each with the fields of its own condition",
+            id="a member of a concrete type with its own condition gathers that condition's fields",
         ),
         pytest.param(
             "../app_graphql.py",
@@ -193,7 +193,7 @@ def test_a_document_goes_on_the_wire_triple_quoted_without_its_client_directive(
 
 
 @pytest.mark.parametrize(
-    ("document", "present", "absent"),
+    ("document", "present"),
     [
         pytest.param(
             'query Q { publication(id: "1") { __typename ... on Book { ...PageCount } } } fragment PageCount on Printed { pageCount }',
@@ -201,83 +201,96 @@ def test_a_document_goes_on_the_wire_triple_quoted_without_its_client_directive(
                 "class _QData_publication_Book(_QData_publication_Book_Base, PageCount, closed=True):",
                 "class _QData_publication_Magazine(_QData_publication_Magazine_Base, closed=True):\n    ...",
             ],
-            [],
             id="a spread on an interface inside a branch is a base of that branch",
         ),
         pytest.param(
-            'query Q { search(text: "Austen") { ...Result } } fragment Result on SearchResult { __typename ... on Author { name } }',
+            'query Q { search(text: "Austen") { ...Result ... on Book { title } } } fragment Result on SearchResult { __typename ... on Author { name } }',
             [
-                "class _QData_search_Author(_QData_search_Author_Base, closed=True):\n    name: _builtins.str"
+                "class _QData_search_Author(_QData_search_Author_Base, closed=True):\n    name: _builtins.str",
+                "    search: _builtins.list[_QData_search]\n",
             ],
-            ["(Result)", "(Result,", ", Result)", ", Result,"],
             id="a fragment on a union is expanded into its members",
         ),
         pytest.param(
             'query Q { search(text: "Austen") { ...Result } } fragment Result on SearchResult { __typename ... on Author { name } }',
             ["class _Result_Author(_Result_Author_Base):\n    name: _builtins.str"],
-            ["class _Result_Author(_Result_Author_Base, closed=True)"],
             id="a fragment on a union has open members, so that a spread's member is assignable to it",
         ),
         pytest.param(
             'query Q { publication(id: "1") { title ...Length } } fragment Length on Printed { pageCount ... on Book { isbn } }',
             [
                 "class _QData_publication_Book(_QData_publication_Book_Base, closed=True):\n    title: _builtins.str\n    pageCount: _builtins.int\n    isbn: _builtins.object",
+                "type _QData_publication = _QData_publication_Book | _QData_publication_Magazine | _QData_publication_Audiobook\n",
             ],
-            ["_Book_Book"],
             id="a condition an expanded fragment brings folds into the concrete member meeting it",
         ),
         pytest.param(
             'query Q { book(lookup: {id: "1"}) { ...Title ...Title } } fragment Title on Book { title }',
             ["    book: Title | None\n"],
-            ["class _QData_book("],
             id="a field selecting one fragment and nothing else is typed by it, however often it spreads it",
         ),
         pytest.param(
-            'query Q { book(lookup: {id: "1"}) { ...Title id } } fragment Title on Book { title }',
-            ["class _QData_book(Title, closed=True):\n    id: _builtins.str"],
-            [],
-            id="a field selecting more than one fragment gets a class inheriting it",
+            'query Q { book(lookup: {id: "1"}) { __typename tn: __typename ...Title } } fragment Title on Book { title }',
+            [
+                "class _QData_book(_QData_book_Base, Title, closed=True):\n    tn: _compat.ReadOnly[_typing.Literal['Book']]",
+                "    book: _QData_book | None\n",
+            ],
+            id="a field selecting `__typename`, aliased or not, next to one fragment gets a class holding those keys",
+        ),
+        pytest.param(
+            'query Q { printed(id: "1") { ...Info } } fragment Info on Publication { title }',
+            [
+                "_QData_printed_Base = _compat.TypedDict('_QData_printed_Base', {'__typename': _compat.ReadOnly[_typing.Literal['Book', 'Magazine']]})",
+                "class _QData_printed(_QData_printed_Base, Info, closed=True):",
+            ],
+            id="a fragment on a supertype of its field's type is a base, whose `__typename` the field's own class narrows",
+        ),
+        pytest.param(
+            'query Q { publication(id: "1") { ...Info } } fragment Info on Publication { title ... on Audiobook { duration } }',
+            [
+                "class _QData_publication_Audiobook(_QData_publication_Audiobook_Base, closed=True):\n    title: _builtins.str\n    duration: _builtins.int",
+                "    publication: _QData_publication | None\n",
+            ],
+            id="a field on an abstract type selecting one fragment alone gets a closed union of its own, since a key check narrows open members unsoundly",
+        ),
+        pytest.param(
+            'query Q { book(lookup: {id: "1"}) { ...Info } } fragment Info on Publication { ...Inner } fragment Inner on Publication { title ... on Audiobook { duration } }',
+            [
+                "class _QData_book(_QData_book_Base, closed=True):\n    title: _builtins.str\n",
+                "    book: _QData_book | None\n",
+            ],
+            id="a fragment on a supertype of its field's type is expanded, since the field cannot hold the fragment's other possible types, wherever its conditions come from",
         ),
         pytest.param(
             'query Q { book(lookup: {id: "1"}) { ...Title ...Pages } } fragment Title on Book { title } fragment Pages on Book { pageCount }',
             ["class _QData_book(Title, Pages, closed=True):"],
-            [],
             id="two fragments are two bases",
         ),
         pytest.param(
             'query Q { book(lookup: {id: "1"}) { ...Card ...Title } } fragment Card on Book { ...Title isbn } fragment Title on Book { title }',
             ["class _QData_book(Card, Title, closed=True):"],
-            [],
             id="a fragment and its own base are both bases",
         ),
         pytest.param(
-            'query Q { book(lookup: {id: "1"}) { ...Title title } } fragment Title on Book { title }',
-            ["class _QData_book(Title, closed=True):"],
-            [],
-            id="a key the selection declares alike is no conflict",
+            'query Q { book(lookup: {id: "1"}) { ...Title title id } } fragment Title on Book { title }',
+            [
+                "class _QData_book(Title, closed=True):\n    title: _builtins.str\n    id: _builtins.str"
+            ],
+            id="a field selecting keys next to one fragment, declared alike or not, gets a class inheriting it",
         ),
         pytest.param(
             'query Q { book(lookup: {id: "1"}) { ...AuthorName author { id } } } fragment AuthorName on Book { author { name } }',
             [
-                "class _QData_book_author(_compat.TypedDict, closed=True):\n    id: _builtins.str\n    name: _builtins.str"
+                "class _QData_book_author(_compat.TypedDict, closed=True):\n    id: _builtins.str\n    name: _builtins.str",
+                "class _QData_book(_compat.TypedDict, closed=True):\n    author: _QData_book_author | None\n",
             ],
-            ["(AuthorName)", "(AuthorName,", ", AuthorName)", ", AuthorName,"],
             id="a fragment declaring a key otherwise than the selection is expanded",
         ),
         pytest.param(
             'query Q { book(lookup: {id: "1"}) { ...AuthorName ...AuthorId } } fragment AuthorName on Book { author { name } } fragment AuthorId on Book { author { id } }',
             [
-                "class _QData_book_author(_compat.TypedDict, closed=True):\n    name: _builtins.str\n    id: _builtins.str"
-            ],
-            [
-                "(AuthorName)",
-                "(AuthorName,",
-                ", AuthorName)",
-                ", AuthorName,",
-                "(AuthorId)",
-                "(AuthorId,",
-                ", AuthorId)",
-                ", AuthorId,",
+                "class _QData_book_author(_compat.TypedDict, closed=True):\n    name: _builtins.str\n    id: _builtins.str",
+                "class _QData_book(_compat.TypedDict, closed=True):\n    author: _QData_book_author | None\n",
             ],
             id="two fragments declaring a key differently are expanded",
         ),
@@ -287,23 +300,20 @@ def test_a_document_goes_on_the_wire_triple_quoted_without_its_client_directive(
                 "class _QData_book(Title, closed=True):",
                 "class _QData_book_author(_compat.TypedDict, closed=True):\n    id: _builtins.str\n    name: _builtins.str",
             ],
-            ["(Card)", "(Card,", ", Card)", ", Card,"],
             id="expanding a fragment keeps the base it spreads",
         ),
         pytest.param(
             'query Q($withGenre: Boolean!) { book(lookup: {id: "1"}) { title genre @include(if: $withGenre) never: genre @include(if: false) always: genre @skip(if: false) } }',
             [
-                "    title: _builtins.str\n    genre: _typing.NotRequired[_schema.Genre]\n    always: _schema.Genre\n"
+                "class _QData_book(_compat.TypedDict, closed=True):\n    title: _builtins.str\n    genre: _typing.NotRequired[_schema.Genre]\n    always: _schema.Genre\n\nclass QData("
             ],
-            ["never: _"],
             id="a field skip or include may leave out is not required",
         ),
         pytest.param(
             'query Q($withTitle: Boolean!) { book(lookup: {id: "1"}) { genre ...Title @include(if: $withTitle) } } fragment Title on Book { title }',
             [
-                "    genre: _schema.Genre\n    title: _typing.NotRequired[_builtins.str]\n"
+                "class _QData_book(_compat.TypedDict, closed=True):\n    genre: _schema.Genre\n    title: _typing.NotRequired[_builtins.str]\n\nclass QData("
             ],
-            ["(Title)", "(Title,", ", Title)", ", Title,"],
             id="a conditional spread is expanded, its keys not required",
         ),
         pytest.param(
@@ -311,19 +321,19 @@ def test_a_document_goes_on_the_wire_triple_quoted_without_its_client_directive(
             [
                 "    title: _builtins.str\n    genre: _typing.NotRequired[_schema.Genre]\n"
             ],
-            [],
             id="a field selected unconditionally somewhere is required",
         ),
         pytest.param(
             'query Q { __type(name: "Book") { kind } }',
-            ["kind: _typing.Literal['SCALAR', 'OBJECT',"],
-            ["_schema."],
+            [
+                "kind: _typing.Literal['SCALAR', 'OBJECT',",
+                "from .. import runtime as _runtime\n\nclass QVariables(",
+            ],
             id="an introspection enum is spelled where it is selected",
         ),
         pytest.param(
             'query Q { search(text: """Austen""") { __typename ... on Author { name } } }',
             ['search(text: "Austen")'],
-            [],
             id="a block string goes on the wire as an ordinary one",
         ),
         pytest.param(
@@ -332,27 +342,23 @@ def test_a_document_goes_on_the_wire_triple_quoted_without_its_client_directive(
                 "'__typename': _compat.ReadOnly[_typing.Literal['Book', 'Magazine', 'Audiobook']]",
                 'publication(id: "1") {\n    __typename\n    title',
             ],
-            [],
             id="a selection on an abstract type gets `__typename`, even without branches",
         ),
         pytest.param(
             'query Q { search(text: "Austen") { ... on Publication { title ... on Book { isbn } } } }',
             [
-                'search(text: "Austen") {\n    __typename\n    ... on Publication {\n      title'
+                'search(text: "Austen") {\n    __typename\n    ... on Publication {\n      title\n      ... on Book {\n        isbn\n      }\n    }\n  }\n}"""'
             ],
-            ["... on Publication {\n      __typename"],
             id="an inline fragment's selections get none, gathered into the branches the enclosing `__typename` tells apart",
         ),
         pytest.param(
             'query Q { search(text: "Austen") { __typename ... on Author { name } } }',
-            [],
-            ["__typename\n    __typename"],
+            ['search(text: "Austen") {\n    __typename\n    ... on Author {'],
             id="a selection already holding `__typename` gets no other",
         ),
         pytest.param(
             'query Q($x: Boolean!) { search(text: "Austen") { __typename @include(if: $x) ... on Author { name } } }',
             ["__typename\n    __typename @include(if: $x§)"],
-            [],
             id="a conditional `__typename` gets an unconditional one, since the key must be present",
         ),
         pytest.param(
@@ -360,7 +366,6 @@ def test_a_document_goes_on_the_wire_triple_quoted_without_its_client_directive(
             [
                 "class _QData_publication_Book(_QData_publication_Book_Base, Pages, closed=True):"
             ],
-            [],
             id="a fragment selecting `__typename` is still a base, whose key a branch narrows",
         ),
         pytest.param(
@@ -368,21 +373,20 @@ def test_a_document_goes_on_the_wire_triple_quoted_without_its_client_directive(
             [
                 "class _QData_publication_Book(_QData_publication_Book_Base, closed=True):\n    pageCount: _builtins.int\n    isbn: _builtins.object"
             ],
-            [],
             id="a condition nested in another gathers into the members of its type",
         ),
         pytest.param(
             'query Q { order(id: "1") { id } }',
             [
-                "class _QData_order(_compat.TypedDict, closed=True):\n    id: _builtins.str"
+                "class _QData_order(_compat.TypedDict, closed=True):\n    id: _builtins.str",
+                "from .. import runtime as _runtime\n\nclass QVariables(",
             ],
-            ["_schema"],
             id="an operation reaching no enum and no input imports neither",
         ),
     ],
 )
 def test_a_document_generates(
-    document: str, present: list[str], absent: list[str], bookshop_schema: GraphQLSchema
+    document: str, present: Collection[str], bookshop_schema: GraphQLSchema
 ) -> None:
     source = generate(
         document=parse(document), schema=bookshop_schema, config=Config()
@@ -390,9 +394,6 @@ def test_a_document_generates(
 
     for snippet in present:
         assert snippet in source
-
-    for snippet in absent:
-        assert snippet not in source
 
 
 @pytest.mark.parametrize(

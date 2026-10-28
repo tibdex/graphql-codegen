@@ -1,5 +1,5 @@
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Annotated, Any, Final, Literal, assert_type
 
 import pytest
@@ -171,7 +171,7 @@ def _sent(
 
 
 def _mutation(
-    document: str, /, *, injections: dict[str, frozenset[tuple[str, ...]]]
+    document: str, /, *, injections: Mapping[str, frozenset[tuple[str, ...]]]
 ) -> Operation[Literal["mutation"], dict[str, object], dict[str, object]]:
     return Operation(
         operation_type="mutation",
