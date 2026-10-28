@@ -199,7 +199,7 @@ class DataTypeEmitter:
             if field.name == "__typename":
                 keys.append(
                     Key(
-                        name="__typename",
+                        name=field.response_name,
                         annotation=_typename_annotation(
                             self._possible_types(normalized.type)
                         ),

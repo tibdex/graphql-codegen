@@ -23,6 +23,9 @@ type Query {
   "The publication with this identifier."
   publication(id: ID!): Publication
 
+  "The printed publication with this identifier."
+  printed(id: ID!): Printed
+
   "Everything whose title or name contains the text."
   search(text: String!): [SearchResult!]!
 
