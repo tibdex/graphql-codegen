@@ -205,7 +205,7 @@ wheels = [
 
 [[package]]
 name = "graphql-codegen"
-version = "1.0.2"
+version = "1.0.3"
 source = { editable = "." }
 dependencies = [
     { name = "graphql-core" },
