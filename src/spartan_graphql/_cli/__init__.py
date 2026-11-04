@@ -4,10 +4,10 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import final
 
-from graphql_codegen._cli._graphql_config import read_graphql_config
-from graphql_codegen._cli._write import write
-from graphql_codegen._metadata import DISTRIBUTION_NAME
-from graphql_codegen.generate import generate
+from spartan_graphql._cli._graphql_config import read_graphql_config
+from spartan_graphql._cli._write import write
+from spartan_graphql._metadata import DISTRIBUTION_NAME
+from spartan_graphql.generate import generate
 
 
 @final

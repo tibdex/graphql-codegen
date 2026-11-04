@@ -11,13 +11,13 @@ from graphql import (
     print_schema,
 )
 
-from graphql_codegen._cli._introspection_graphql import (
+from spartan_graphql._cli._introspection_graphql import (
     FieldNames,
     IntrospectionProbe,
     IntrospectionProbeData,
 )
-from graphql_codegen._metadata import DISTRIBUTION_NAME, METADATA
-from graphql_codegen.runtime import Operation, Request
+from spartan_graphql._metadata import DISTRIBUTION_NAME, METADATA
+from spartan_graphql.runtime import Operation, Request
 
 _JSON: Final = types_map[".json"]
 _GRAPHQL_RESPONSE: Final = "application/graphql-response+json"

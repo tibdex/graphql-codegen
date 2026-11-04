@@ -20,8 +20,8 @@ from graphql import (
     visit,
 )
 
-from graphql_codegen._generator._document import get_transitively_spread_fragments
-from graphql_codegen.runtime._sigil import SIGIL
+from spartan_graphql._generator._document import get_transitively_spread_fragments
+from spartan_graphql.runtime._sigil import SIGIL
 
 # NUL: no printed name holds it, and `print_ast()` escapes it in strings.
 _PLACEHOLDER: Final = "\x00"

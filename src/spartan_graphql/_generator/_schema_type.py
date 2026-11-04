@@ -21,8 +21,8 @@ from graphql import (
     visit,
 )
 
-from graphql_codegen._generator._annotation import AnnotationBuilder
-from graphql_codegen._generator._ast_nodes import (
+from spartan_graphql._generator._annotation import AnnotationBuilder
+from spartan_graphql._generator._ast_nodes import (
     constant,
     documented,
     name,
@@ -31,17 +31,17 @@ from graphql_codegen._generator._ast_nodes import (
     type_alias,
     union,
 )
-from graphql_codegen._generator._naming import TYPING
-from graphql_codegen._generator._scalar import emit_scalar_aliases
-from graphql_codegen._generator._schema import as_non_null
-from graphql_codegen._generator._structs import StructTypes, get_struct_input_name
-from graphql_codegen._generator._typed_dict import Key, emit_closed
-from graphql_codegen._generator.spelling import (
+from spartan_graphql._generator._naming import TYPING
+from spartan_graphql._generator._scalar import emit_scalar_aliases
+from spartan_graphql._generator._schema import as_non_null
+from spartan_graphql._generator._structs import StructTypes, get_struct_input_name
+from spartan_graphql._generator._typed_dict import Key, emit_closed
+from spartan_graphql._generator.spelling import (
     PendingSpelling,
     SettledSpelling,
     ast_str,
 )
-from graphql_codegen.scalar import Scalar
+from spartan_graphql.scalar import Scalar
 
 
 def _is_required(field: GraphQLInputField, /) -> bool:

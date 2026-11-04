@@ -12,12 +12,12 @@ from graphql import (
     print_schema,
 )
 
-import graphql_codegen
-from graphql_codegen import Config, DocumentSiblingModule, PackageLocation, generate
-from graphql_codegen._cli._introspection import fetch_sdl
+import spartan_graphql
+from spartan_graphql import Config, DocumentSiblingModule, PackageLocation, generate
+from spartan_graphql._cli._introspection import fetch_sdl
 from tests._graphql_server import GraphqlHandler
 
-_PACKAGE_DIRECTORY: Final = Path(graphql_codegen.__file__).parent
+_PACKAGE_DIRECTORY: Final = Path(spartan_graphql.__file__).parent
 _DOCUMENT: Final = _PACKAGE_DIRECTORY / "_cli" / "_introspection.graphql"
 _MODULE: Final = _DOCUMENT.with_name("_introspection_graphql.py")
 
@@ -33,7 +33,7 @@ def _generated_module() -> bytes:
                 name="{document}_graphql",
                 package_location=PackageLocation(
                     module_root=PurePosixPath(_PACKAGE_DIRECTORY.parent.as_posix()),
-                    package=graphql_codegen.__name__,
+                    package=spartan_graphql.__name__,
                 ),
             ),
             non_null_directive_name="nonNull",
@@ -54,7 +54,7 @@ def test_an_endpoint_is_introspected_with_its_headers_for_all_it_supports(
 
     def handle(query: str, /, *, headers: Mapping[str, str]) -> object:
         assert headers["Authorization"] == "Bearer t"
-        assert headers["User-Agent"].startswith("graphql-codegen/")
+        assert headers["User-Agent"].startswith("spartan-graphql/")
         queries.append(query)
         return graphql_sync(bookshop_schema, query).formatted
 

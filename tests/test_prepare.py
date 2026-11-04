@@ -27,12 +27,12 @@ from bookshop.scalar import ISBN
 
 _CARD: Final = {
     "id": "1",
-    "title": "Persuasion",
+    "title": "On Sparta",
     "price": "8.99",
     "author": None,
 }
-_BOOK: Final = {**_CARD, "isbn": "9780141439518", "pageCount": 249}
-_GET_BOOK: Final = GetBook({"lookup": {"isbn": ISBN("9780141439518")}})
+_BOOK: Final = {**_CARD, "isbn": "9780140449433", "pageCount": 249}
+_GET_BOOK: Final = GetBook({"lookup": {"isbn": ISBN("9780140449433")}})
 _ON_STATUS_CHANGED: Final = OnOrderStatusChanged({"orderId": "o1"})
 _KEY: Final = UUID(int=0)
 _INJECTORS: Final = injectors(
@@ -56,7 +56,7 @@ def test_creating_a_request_has_no_side_effect() -> None:
 
     assert bytes(prepared) == bytes(_GET_BOOK.prepare(injectors=_INJECTORS))
     assert json.loads(bytes(prepared))["variables"] == {
-        "lookup": {"isbn": "9780141439518"}
+        "lookup": {"isbn": "9780140449433"}
     }
 
 
@@ -131,7 +131,7 @@ def test_a_request_returning_its_error_gets_it_in_place_of_its_data() -> None:
     # `book` is `@nonNull`, so its null moves up to the data itself.
     assert (result.data, result.parse_data()) == ({"book": None}, None)
     assert result.__notes__ == [
-        "Raised by `GetBook` with variables {'lookup': {'isbn': '9780141439518'}}."
+        "Raised by `GetBook` with variables {'lookup': {'isbn': '9780140449433'}}."
     ]
     assert _parse(_GET_BOOK.returning_error(), {"data": {"book": _BOOK}}) == {
         "book": {**_BOOK, "price": Decimal("8.99")}
@@ -221,7 +221,7 @@ def test_an_unexpected_null_in_a_merge_notes_its_operation_and_the_variables_sen
         )
 
     assert error_info.value.__notes__ == [
-        "Raised by `GetBook` with variables {'lookup': {'isbn': '9780141439518'}}."
+        "Raised by `GetBook` with variables {'lookup': {'isbn': '9780140449433'}}."
     ]
 
 

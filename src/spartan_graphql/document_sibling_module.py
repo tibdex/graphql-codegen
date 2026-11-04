@@ -3,7 +3,7 @@ from functools import cached_property
 from pathlib import PurePosixPath
 from typing import final
 
-from graphql_codegen.package_location import PackageLocation
+from spartan_graphql.package_location import PackageLocation
 
 
 @final

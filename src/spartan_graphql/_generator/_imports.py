@@ -3,8 +3,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import assert_never, final
 
-from graphql_codegen._generator._ast_nodes import import_as
-from graphql_codegen._generator._naming import (
+from spartan_graphql._generator._ast_nodes import import_as
+from spartan_graphql._generator._naming import (
     ABC,
     BUILTINS,
     COMPAT,
@@ -16,7 +16,7 @@ from graphql_codegen._generator._naming import (
     SCHEMA,
     TYPING,
 )
-from graphql_codegen._generator.spelling import ast_str
+from spartan_graphql._generator.spelling import ast_str
 
 SCHEMA_MODULE = "schema"
 DOCUMENT_PACKAGE = "document"

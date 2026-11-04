@@ -12,10 +12,10 @@ from tests._bookshop import BOOKSHOP_DIRECTORY, BOOKSHOP_GENERATED_PACKAGE_DIREC
 @pytest.mark.parametrize(
     "command",
     [
-        pytest.param([sys.executable, "-m", "graphql_codegen"], id="python -m"),
+        pytest.param([sys.executable, "-m", "spartan_graphql"], id="python -m"),
         # The script `pyproject.toml` declares, next to the interpreter as `uv run` finds it.
         pytest.param(
-            [shutil.which("graphql-codegen", path=Path(sys.executable).parent)],
+            [shutil.which("spartan-graphql", path=Path(sys.executable).parent)],
             id="script",
         ),
     ],

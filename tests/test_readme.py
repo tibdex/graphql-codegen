@@ -1,0 +1,66 @@
+import re
+from pathlib import Path
+from typing import Final
+
+import pytest
+
+_DIRECTORY: Final = Path(__file__).parents[1]
+_README: Final = (_DIRECTORY / "README.md").read_text(encoding="utf-8")
+_MARKER: Final = re.compile(r"<!-- (?P<kind>file|excerpt): (?P<path>\S+) -->")
+_BLOCK: Final = re.compile(
+    rf"(?:{_MARKER.pattern}\n\n)?```(?P<language>\w*)\n(?P<code>.*?)\n```",
+    flags=re.DOTALL,
+)
+_BLOCKS: Final = list(_BLOCK.finditer(_README))
+
+
+@pytest.mark.parametrize(
+    "block",
+    [
+        pytest.param(
+            block,
+            id=f"line {_README.count(chr(10), 0, block.start()) + 1}"
+            + (f": {block['path']}" if block["path"] else ""),
+        )
+        for block in _BLOCKS
+    ],
+)
+def test_a_code_block_is_a_file_of_the_package(block: re.Match[str]) -> None:
+    if block["path"] is None:
+        assert block["language"] == "shell", (
+            "Expected the block to follow a `<!-- file: … -->` or `<!-- excerpt: … -->` marker naming the file it shows."
+        )
+        return
+
+    source = (_DIRECTORY / block["path"]).read_text(encoding="utf-8")
+
+    if block["kind"] == "file":
+        assert block["code"] == source.rstrip("\n"), (
+            f"Expected the block to show `{block['path']}` as it is."
+        )
+        return
+
+    code = block["code"]
+
+    if block["language"] == "diff":
+        # The removed lines are another library's, so only the rest is an excerpt.
+        code = "\n".join(
+            line[1:] for line in code.split("\n") if not line.startswith("-")
+        )
+
+    position = 0
+
+    # A blank line or a `# …` line stands for what the excerpt leaves out.
+    for piece in re.split(r"\n(?: *# …)?\n", code):
+        position = source.find(piece, position)
+        assert position != -1, (
+            f"Expected `{block['path']}` to hold, after what the excerpt shows before it:\n{piece}"
+        )
+        position += len(piece)
+
+
+def test_every_marker_precedes_a_block() -> None:
+    assert _MARKER.findall(_README), "Expected the README to show files of the package."
+    assert len(_MARKER.findall(_README)) == sum(
+        block["path"] is not None for block in _BLOCKS
+    )

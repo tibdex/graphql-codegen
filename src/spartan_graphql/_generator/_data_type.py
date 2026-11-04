@@ -12,8 +12,8 @@ from graphql import (
     is_type_sub_type_of,
 )
 
-from graphql_codegen._generator._annotation import AnnotationBuilder
-from graphql_codegen._generator._ast_nodes import (
+from spartan_graphql._generator._annotation import AnnotationBuilder
+from spartan_graphql._generator._ast_nodes import (
     constant,
     documented,
     name,
@@ -23,22 +23,22 @@ from graphql_codegen._generator._ast_nodes import (
     type_alias,
     union,
 )
-from graphql_codegen._generator._naming import (
+from spartan_graphql._generator._naming import (
     COMPAT,
     REFLECTION,
     SCHEMA,
     TYPING,
     nested_type_name,
 )
-from graphql_codegen._generator._schema import as_non_null
-from graphql_codegen._generator._selection import (
+from spartan_graphql._generator._schema import as_non_null
+from spartan_graphql._generator._selection import (
     SelectedField,
     SelectionSet,
     TypeCondition,
 )
-from graphql_codegen._generator._structs import StructTypes, get_struct_input_name
-from graphql_codegen._generator._typed_dict import Key, emit_data
-from graphql_codegen._generator.spelling import (
+from spartan_graphql._generator._structs import StructTypes, get_struct_input_name
+from spartan_graphql._generator._typed_dict import Key, emit_data
+from spartan_graphql._generator.spelling import (
     PendingSpelling,
     SettledSpelling,
     Spelling,

@@ -9,7 +9,7 @@ import pytest
 from graphql import build_schema, parse
 from typing_extensions import get_type_hints, is_typeddict
 
-from graphql_codegen import Config, generate
+from spartan_graphql import Config, generate
 
 _SCHEMA: Final = """
 type Query {

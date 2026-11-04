@@ -4,7 +4,7 @@ from pathlib import PurePosixPath
 from typing import cast, final
 from urllib.parse import urlsplit
 
-from graphql_codegen._cli._parsing import (
+from spartan_graphql._cli._parsing import (
     check_all_read,
     optional,
     parse_at,
@@ -12,7 +12,7 @@ from graphql_codegen._cli._parsing import (
     parse_string,
     required,
 )
-from graphql_codegen._error_note import error_note
+from spartan_graphql._error_note import error_note
 
 
 @final

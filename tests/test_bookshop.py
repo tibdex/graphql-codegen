@@ -42,10 +42,10 @@ from tests._server import PostHandler
 _KEY: Final = UUID("6f1c2b9e-0d4a-4c3e-9b7a-2e5f8d1c3a40")
 _BOOK: Final = {
     "id": "1",
-    "title": "Persuasion",
+    "title": "On Sparta",
     "price": "8.99",
-    "author": {"name": "Jane Austen"},
-    "isbn": "9780141439518",
+    "author": {"name": "Plutarch"},
+    "isbn": "9780140449433",
     "pageCount": 249,
 }
 _ORDER: Final = {"id": "o1", "status": "SHIPPED"}
@@ -122,9 +122,9 @@ def test_a_title_is_awaited_with_a_timeout(
         return httpx2.Response(200, json={"data": {"book": _BOOK}})
 
     mocked_http(handle)
-    book_title = run_async(title(ISBN("9780141439518")))
+    book_title = run_async(title(ISBN("9780140449433")))
 
-    assert book_title == "Persuasion"
+    assert book_title == "On Sparta"
 
 
 def test_an_http_error_is_httpx2_s_own(mocked_http: Callable[[_Handle], None]) -> None:
@@ -181,7 +181,7 @@ def test_watching_an_order_asynchronously_follows_its_statuses(
 def test_describing_a_book(bookshop_server: _StartServer) -> None:
     bookshop_server(_answering(lambda _request: {"data": {"book": _BOOK}}))
 
-    assert describe(ISBN("9780141439518")) == "Persuasion, by Jane Austen, costs 8.99."
+    assert describe(ISBN("9780140449433")) == "On Sparta, by Plutarch, costs 8.99."
 
 
 def test_describing_a_missing_book(bookshop_server: _StartServer) -> None:
@@ -202,16 +202,16 @@ def test_a_book_and_similar_publications_come_in_one_request(
     def respond(request: Mapping[str, object], /) -> object:
         assert request["operationName"] == "MergedOperation"
         search = [
-            {"__typename": "Book", "title": "Emma", "price": "7.99"},
-            {"__typename": "Author", "name": "Jane Austen"},
+            {"__typename": "Book", "title": "The Histories", "price": "7.99"},
+            {"__typename": "Author", "name": "Herodotus"},
         ]
         return {"data": {"book_0": _BOOK, "search_1": search}}
 
     bookshop_server(_answering(respond))
 
-    assert book_and_similar(ISBN("9780141439518"), "Austen") == (
-        "Persuasion",
-        ["Emma", "Jane Austen"],
+    assert book_and_similar(ISBN("9780140449433"), "Sparta") == (
+        "On Sparta",
+        ["The Histories", "Herodotus"],
     )
 
 
@@ -220,11 +220,15 @@ def test_books_and_publications_are_looked_up_in_one_request(
 ) -> None:
     def respond(request: Mapping[str, object], /) -> object:
         assert request["operationName"] == "MergedOperation"
-        publication = {"__typename": "Audiobook", "title": "Emma", "duration": 723}
+        publication = {
+            "__typename": "Audiobook",
+            "title": "History of the Peloponnesian War",
+            "duration": 723,
+        }
         return {"data": {"book_0": _BOOK, "publication_1": publication}}
 
     bookshop_server(_answering(respond))
-    results = look_up([ISBN("9780141439518")], ["p1"])
+    results = look_up([ISBN("9780140449433")], ["p1"])
 
     assert [list(data) for data in results] == [["book"], ["publication"]]
 
@@ -232,7 +236,7 @@ def test_books_and_publications_are_looked_up_in_one_request(
 def test_a_saved_search_runs_with_its_filter_as_saved(
     bookshop_server: _StartServer,
 ) -> None:
-    saved = {"and": [{"genre": "FICTION"}, {"not": {"author": "a1"}}]}
+    saved = {"and": [{"genre": "NONFICTION"}, {"not": {"author": "a1"}}]}
     requests: list[Mapping[str, object]] = []
 
     def respond(request: Mapping[str, object], /) -> object:
@@ -240,13 +244,13 @@ def test_a_saved_search_runs_with_its_filter_as_saved(
         return (
             {"data": {"savedSearch": {"value": saved}}}
             if request["operationName"] == "GetSavedSearch"
-            else {"data": {"books": [{**_BOOK, "genre": "FICTION"}]}}
+            else {"data": {"books": [{**_BOOK, "genre": "NONFICTION"}]}}
         )
 
     bookshop_server(_answering(respond))
     titles = run_saved_search("classics")
 
-    assert titles == ["Persuasion"]
+    assert titles == ["On Sparta"]
     assert requests[1]["variables"] == {"filter": saved}
 
 
@@ -256,16 +260,20 @@ def test_a_saved_search_runs_with_its_filter_as_saved(
         pytest.param(
             {
                 "__typename": "Book",
-                "title": "Persuasion",
+                "title": "On Sparta",
                 "pages": 249,
-                "isbn": "9780141439518",
+                "isbn": "9780140449433",
             },
-            "Persuasion has 249 pages.",
+            "On Sparta has 249 pages.",
             id="printed",
         ),
         pytest.param(
-            {"__typename": "Audiobook", "title": "Emma", "duration": 723},
-            "Emma lasts 723 minutes.",
+            {
+                "__typename": "Audiobook",
+                "title": "History of the Peloponnesian War",
+                "duration": 723,
+            },
+            "History of the Peloponnesian War lasts 723 minutes.",
             id="an audiobook",
         ),
         pytest.param(None, "No such publication.", id="missing"),
@@ -283,8 +291,8 @@ def test_telling_a_publication_s_length(
     ("publication", "description"),
     [
         pytest.param(
-            {"__typename": "Magazine", "title": "The Economist", "pages": 80},
-            "The Economist has 80 pages.",
+            {"__typename": "Magazine", "title": "The New Yorker", "pages": 80},
+            "The New Yorker has 80 pages.",
             id="printed",
         ),
         pytest.param({"__typename": "Audiobook"}, "No pages.", id="an audiobook"),
@@ -319,17 +327,17 @@ def test_labeling_an_order_status(status: str, label: str) -> None:
             None,
             None,
             _BOOK,
-            "Persuasion",
+            "On Sparta",
             {"genres": []},
             id="defaults",
         ),
         pytest.param(
-            ("FICTION",),
+            ("NONFICTION",),
             3,
             True,
-            {**_BOOK, "genre": "FICTION"},
-            "Persuasion (fiction)",
-            {"genres": ["FICTION"], "withGenres": True, "first": 3},
+            {**_BOOK, "genre": "NONFICTION"},
+            "On Sparta (nonfiction)",
+            {"genres": ["NONFICTION"], "withGenres": True, "first": 3},
             id="a genre, a count, and genres shown",
         ),
     ],
@@ -359,11 +367,11 @@ def test_listing_titles_sends_only_the_given_count(
 def test_the_catalog_lists_cards(bookshop_server: _StartServer) -> None:
     bookshop_server(
         _answering(
-            lambda _request: {"data": {"books": [{**_BOOK, "genre": "FICTION"}]}}
+            lambda _request: {"data": {"books": [{**_BOOK, "genre": "NONFICTION"}]}}
         )
     )
 
-    assert catalog(1) == ["Persuasion, by Jane Austen"]
+    assert catalog(1) == ["On Sparta, by Plutarch"]
 
 
 def test_a_price_goes_out_and_comes_back_through_its_codec(
@@ -373,11 +381,11 @@ def test_a_price_goes_out_and_comes_back_through_its_codec(
 
     def respond(request: Mapping[str, object], /) -> object:
         requests.append(request)
-        return {"data": {"books": [{**_BOOK, "price": "8.99", "genre": "FICTION"}]}}
+        return {"data": {"books": [{**_BOOK, "price": "8.99", "genre": "NONFICTION"}]}}
 
     bookshop_server(_answering(respond))
 
-    assert cheaper_than(Decimal("10.00")) == ["Persuasion, by Jane Austen: 8.99"]
+    assert cheaper_than(Decimal("10.00")) == ["On Sparta, by Plutarch: 8.99"]
     assert [request["variables"] for request in requests] == [
         {"filter": {"priceBelow": "10.00"}}
     ]

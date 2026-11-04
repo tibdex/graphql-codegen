@@ -9,8 +9,8 @@ from typing import Final
 import pytest
 from graphql import Source
 
-from graphql_codegen import Config, PackageLocation
-from graphql_codegen._cli._graphql_config import (
+from spartan_graphql import Config, PackageLocation
+from spartan_graphql._cli._graphql_config import (
     _EXTENSION_NAME,
     _get_loader,
     _interpolate,
@@ -19,7 +19,7 @@ from graphql_codegen._cli._graphql_config import (
     _Project,
     read_graphql_config,
 )
-from graphql_codegen._cli._schema_pointer import Globs
+from spartan_graphql._cli._schema_pointer import Globs
 from tests._bookshop import copy_bookshop
 
 _EXTENSION: Final = {"moduleRoot": ".", "package": "api"}
@@ -66,7 +66,7 @@ def test_a_yaml_config_without_the_extra_names_it(
     # A `None` entry makes the import fail, as when PyYAML is not installed.
     monkeypatch.setitem(sys.modules, "yaml", None)
 
-    with pytest.raises(ImportError, match=re.escape("install `graphql-codegen[yaml]`")):
+    with pytest.raises(ImportError, match=re.escape("install `spartan-graphql[yaml]`")):
         _get_loader(Path("graphql.config.yml"))
 
 

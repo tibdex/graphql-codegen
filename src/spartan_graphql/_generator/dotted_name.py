@@ -2,7 +2,7 @@ import builtins
 from dataclasses import dataclass
 from typing import final
 
-from graphql_codegen._generator.spelling import is_bindable
+from spartan_graphql._generator.spelling import is_bindable
 
 
 @final

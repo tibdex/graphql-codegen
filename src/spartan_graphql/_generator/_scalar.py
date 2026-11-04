@@ -4,15 +4,15 @@ from typing import assert_never
 
 from graphql import GraphQLScalarType, GraphQLSchema
 
-from graphql_codegen._generator._ast_nodes import name, qualified, subscript, type_alias
-from graphql_codegen._generator._naming import BUILTINS, REFLECTION, TYPING
-from graphql_codegen._generator.dotted_name import Builtin, Import, Reference
-from graphql_codegen._generator.spelling import (
+from spartan_graphql._generator._ast_nodes import name, qualified, subscript, type_alias
+from spartan_graphql._generator._naming import BUILTINS, REFLECTION, TYPING
+from spartan_graphql._generator.dotted_name import Builtin, Import, Reference
+from spartan_graphql._generator.spelling import (
     PendingSpelling,
     SettledSpelling,
     ast_str,
 )
-from graphql_codegen.scalar import Scalar
+from spartan_graphql.scalar import Scalar
 
 
 def check_scalars(scalars: Mapping[str, Scalar], /, *, schema: GraphQLSchema) -> None:

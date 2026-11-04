@@ -12,9 +12,9 @@ from graphql import (
     print_schema,
 )
 
-from graphql_codegen._cli._schema_pointer import Endpoint, IntrospectionResult
-from graphql_codegen._cli._source import read_schema, read_sources
-from graphql_codegen.runtime import RequestError
+from spartan_graphql._cli._schema_pointer import Endpoint, IntrospectionResult
+from spartan_graphql._cli._source import read_schema, read_sources
+from spartan_graphql.runtime import RequestError
 from tests._bookshop import copy_bookshop
 from tests._graphql_server import GraphqlHandler
 

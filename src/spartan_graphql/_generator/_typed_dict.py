@@ -3,7 +3,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import final
 
-from graphql_codegen._generator._ast_nodes import (
+from spartan_graphql._generator._ast_nodes import (
     class_definition,
     constant,
     documented,
@@ -11,8 +11,8 @@ from graphql_codegen._generator._ast_nodes import (
     qualified,
     subscript,
 )
-from graphql_codegen._generator._naming import COMPAT, TYPING
-from graphql_codegen._generator.spelling import Spelling, ast_str, is_bindable
+from spartan_graphql._generator._naming import COMPAT, TYPING
+from spartan_graphql._generator.spelling import Spelling, ast_str, is_bindable
 
 
 @final

@@ -4,7 +4,7 @@ from typing import Annotated, Any, Final, Literal, assert_type
 
 import pytest
 
-from graphql_codegen.runtime import (
+from spartan_graphql.runtime import (
     OMITTED,
     ExecutionError,
     Operation,
@@ -13,9 +13,9 @@ from graphql_codegen.runtime import (
     RequestError,
     merge,
 )
-from graphql_codegen.runtime._compat import TypedDict
-from graphql_codegen.runtime._reflection import NON_NULL
-from graphql_codegen.runtime.injection import _Injectors
+from spartan_graphql.runtime._compat import TypedDict
+from spartan_graphql.runtime._reflection import NON_NULL
+from spartan_graphql.runtime.injection import _Injectors
 
 _LIST_BOOKS: Final[
     Operation[Literal["query"], dict[str, object], dict[str, object]]
