@@ -5,14 +5,14 @@ from typing import assert_never, cast
 
 from graphql import IntrospectionQuery, Source, build_client_schema, print_schema
 
-from graphql_codegen._cli._introspection import fetch_sdl
-from graphql_codegen._cli._schema_pointer import (
+from spartan_graphql._cli._introspection import fetch_sdl
+from spartan_graphql._cli._schema_pointer import (
     Endpoint,
     Globs,
     IntrospectionResult,
     SchemaPointer,
 )
-from graphql_codegen._error_note import error_note
+from spartan_graphql._error_note import error_note
 
 
 def read_sources(globs: Sequence[str], /, *, directory: Path) -> list[Source]:

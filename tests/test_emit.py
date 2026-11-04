@@ -11,7 +11,7 @@ from pathlib import Path, PurePosixPath
 import pytest
 from graphql import GraphQLSchema, build_schema, parse
 
-from graphql_codegen import Config, generate
+from spartan_graphql import Config, generate
 from tests._bookshop import BOOKSHOP_DIRECTORY, BOOKSHOP_GENERATED_PACKAGE_DIRECTORY
 
 
@@ -204,7 +204,7 @@ def test_a_document_goes_on_the_wire_triple_quoted_without_its_client_directive(
             id="a spread on an interface inside a branch is a base of that branch",
         ),
         pytest.param(
-            'query Q { search(text: "Austen") { ...Result ... on Book { title } } } fragment Result on SearchResult { __typename ... on Author { name } }',
+            'query Q { search(text: "Sparta") { ...Result ... on Book { title } } } fragment Result on SearchResult { __typename ... on Author { name } }',
             [
                 "class _QData_search_Author(_QData_search_Author_Base, closed=True):\n    name: _builtins.str",
                 "    search: _builtins.list[_QData_search]\n",
@@ -212,7 +212,7 @@ def test_a_document_goes_on_the_wire_triple_quoted_without_its_client_directive(
             id="a fragment on a union is expanded into its members",
         ),
         pytest.param(
-            'query Q { search(text: "Austen") { ...Result } } fragment Result on SearchResult { __typename ... on Author { name } }',
+            'query Q { search(text: "Sparta") { ...Result } } fragment Result on SearchResult { __typename ... on Author { name } }',
             ["class _Result_Author(_Result_Author_Base):\n    name: _builtins.str"],
             id="a fragment on a union has open members, so that a spread's member is assignable to it",
         ),
@@ -332,8 +332,8 @@ def test_a_document_goes_on_the_wire_triple_quoted_without_its_client_directive(
             id="an introspection enum is spelled where it is selected",
         ),
         pytest.param(
-            'query Q { search(text: """Austen""") { __typename ... on Author { name } } }',
-            ['search(text: "Austen")'],
+            'query Q { search(text: """Sparta""") { __typename ... on Author { name } } }',
+            ['search(text: "Sparta")'],
             id="a block string goes on the wire as an ordinary one",
         ),
         pytest.param(
@@ -345,19 +345,19 @@ def test_a_document_goes_on_the_wire_triple_quoted_without_its_client_directive(
             id="a selection on an abstract type gets `__typename`, even without branches",
         ),
         pytest.param(
-            'query Q { search(text: "Austen") { ... on Publication { title ... on Book { isbn } } } }',
+            'query Q { search(text: "Sparta") { ... on Publication { title ... on Book { isbn } } } }',
             [
-                'search(text: "Austen") {\n    __typename\n    ... on Publication {\n      title\n      ... on Book {\n        isbn\n      }\n    }\n  }\n}"""'
+                'search(text: "Sparta") {\n    __typename\n    ... on Publication {\n      title\n      ... on Book {\n        isbn\n      }\n    }\n  }\n}"""'
             ],
             id="an inline fragment's selections get none, gathered into the branches the enclosing `__typename` tells apart",
         ),
         pytest.param(
-            'query Q { search(text: "Austen") { __typename ... on Author { name } } }',
-            ['search(text: "Austen") {\n    __typename\n    ... on Author {'],
+            'query Q { search(text: "Sparta") { __typename ... on Author { name } } }',
+            ['search(text: "Sparta") {\n    __typename\n    ... on Author {'],
             id="a selection already holding `__typename` gets no other",
         ),
         pytest.param(
-            'query Q($x: Boolean!) { search(text: "Austen") { __typename @include(if: $x) ... on Author { name } } }',
+            'query Q($x: Boolean!) { search(text: "Sparta") { __typename @include(if: $x) ... on Author { name } } }',
             ["__typename\n    __typename @include(if: $x§)"],
             id="a conditional `__typename` gets an unconditional one, since the key must be present",
         ),

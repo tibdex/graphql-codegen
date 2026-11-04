@@ -4,8 +4,8 @@ from typing import final
 
 from graphql import GraphQLError, assert_name
 
-from graphql_codegen.document_sibling_module import DocumentSiblingModule
-from graphql_codegen.scalar import Scalar
+from spartan_graphql.document_sibling_module import DocumentSiblingModule
+from spartan_graphql.scalar import Scalar
 
 
 @final

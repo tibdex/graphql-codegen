@@ -6,11 +6,11 @@ from typing import Annotated, Literal, NotRequired, Required
 
 import pytest
 
-from graphql_codegen.runtime import UnexpectedNullError
+from spartan_graphql.runtime import UnexpectedNullError
 
 # From `_compat`, as generated types are: `typing.is_typeddict()` once missed `typing_extensions.TypedDict`.
-from graphql_codegen.runtime._compat import ReadOnly, TypedDict
-from graphql_codegen.runtime._reflection import (
+from spartan_graphql.runtime._compat import ReadOnly, TypedDict
+from spartan_graphql.runtime._reflection import (
     NON_NULL,
     Codec,
     _Builder,

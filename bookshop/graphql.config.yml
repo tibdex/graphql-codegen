@@ -1,9 +1,8 @@
 # An SDL file here, but globs, introspection results, and server URLs work too.
 schema: schema.graphqls
 documents: "*.graphql"
-# graphql-codegen's config, under its extension name.
 extensions:
-  pythonCodegen:
+  spartan:
     # Where imports start, relative to this file's directory.
     moduleRoot: ..
     # Dotted name from the module root, so written to `bookshop/graphql`.

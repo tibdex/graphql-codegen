@@ -1,7 +1,7 @@
 import os
 from pathlib import Path, PurePosixPath
 
-from graphql_codegen._cli._write import write
+from spartan_graphql._cli._write import write
 
 
 def test_a_file_already_holding_its_content_is_left_untouched(tmp_path: Path) -> None:

@@ -4,7 +4,7 @@ from functools import cached_property
 from pathlib import PurePosixPath
 from typing import final
 
-from graphql_codegen._generator.spelling import is_bindable
+from spartan_graphql._generator.spelling import is_bindable
 
 
 @final

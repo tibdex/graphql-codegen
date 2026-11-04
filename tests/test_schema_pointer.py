@@ -3,7 +3,7 @@ from pathlib import PurePosixPath
 
 import pytest
 
-from graphql_codegen._cli._schema_pointer import (
+from spartan_graphql._cli._schema_pointer import (
     Endpoint,
     Globs,
     IntrospectionResult,

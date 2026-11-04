@@ -16,14 +16,14 @@ from bookshop.graphql.runtime import ExecutionError, RequestError
 from bookshop.scalar import ISBN
 from tests._server import PostHandler
 
-_GET_BOOK: Final = GetBook({"lookup": {"isbn": ISBN("9780141439518")}})
+_GET_BOOK: Final = GetBook({"lookup": {"isbn": ISBN("9780140449433")}})
 _ON_STATUS_CHANGED: Final = OnOrderStatusChanged({"orderId": "o1"})
 _BOOK: Final = {
     "id": "1",
-    "title": "Persuasion",
+    "title": "On Sparta",
     "price": "8.99",
     "author": None,
-    "isbn": "9780141439518",
+    "isbn": "9780140449433",
     "pageCount": 249,
 }
 
@@ -59,11 +59,11 @@ def test_a_call_goes_over_a_socket_and_its_response_comes_back(
     data = bookshop.transport.send(_GET_BOOK)
 
     assert data["book"] is not None
-    assert data["book"]["title"] == "Persuasion"
+    assert data["book"]["title"] == "On Sparta"
 
     ((content_type, body),) = received
     assert content_type == "application/json"
-    assert json.loads(body)["variables"] == {"lookup": {"isbn": "9780141439518"}}
+    assert json.loads(body)["variables"] == {"lookup": {"isbn": "9780140449433"}}
 
 
 def test_a_dropped_connection_is_retried_with_the_same_body(
@@ -85,7 +85,7 @@ def test_a_dropped_connection_is_retried_with_the_same_body(
     bookshop_server(handle)
     data = bookshop.transport.send(_GET_BOOK)
 
-    assert data["book"]["title"] == "Persuasion"
+    assert data["book"]["title"] == "On Sparta"
     assert len(received) == 2
     assert received[0] == received[1]
 

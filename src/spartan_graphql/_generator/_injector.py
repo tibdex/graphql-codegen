@@ -19,18 +19,18 @@ from graphql import (
     type_from_ast,
 )
 
-from graphql_codegen._generator._annotation import AnnotationBuilder
-from graphql_codegen._generator._ast_nodes import (
+from spartan_graphql._generator._annotation import AnnotationBuilder
+from spartan_graphql._generator._ast_nodes import (
     docstring,
     name,
     qualified,
     subscript,
     union,
 )
-from graphql_codegen._generator._naming import ABC, INJECTION, OMITTED
-from graphql_codegen._generator._schema import as_non_null
-from graphql_codegen._generator._typed_dict import Key, emit_closed
-from graphql_codegen._generator.spelling import SettledSpelling
+from spartan_graphql._generator._naming import ABC, INJECTION, OMITTED
+from spartan_graphql._generator._schema import as_non_null
+from spartan_graphql._generator._typed_dict import Key, emit_closed
+from spartan_graphql._generator.spelling import SettledSpelling
 
 type Injections = Mapping[str, Mapping[tuple[str, ...], GraphQLInputType]]
 

@@ -2,8 +2,8 @@ from dataclasses import dataclass
 from functools import cached_property
 from typing import final
 
-from graphql_codegen._error_note import error_note
-from graphql_codegen._generator.dotted_name import Reference, parse_dotted_name
+from spartan_graphql._error_note import error_note
+from spartan_graphql._generator.dotted_name import Reference, parse_dotted_name
 
 
 @final

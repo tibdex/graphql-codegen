@@ -17,20 +17,20 @@ from graphql import (
     is_introspection_type,
 )
 
-from graphql_codegen._generator._ast_nodes import (
+from spartan_graphql._generator._ast_nodes import (
     constant,
     name,
     optional,
     qualified,
     subscript,
 )
-from graphql_codegen._generator._naming import (
+from spartan_graphql._generator._naming import (
     ABC,
     BUILTINS,
     SCHEMA,
     TYPING,
 )
-from graphql_codegen._generator.spelling import SettledSpelling
+from spartan_graphql._generator.spelling import SettledSpelling
 
 # A config may override them.
 BUILT_IN_SCALARS: Final[Mapping[str, str]] = {

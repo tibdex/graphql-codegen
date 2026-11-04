@@ -13,10 +13,10 @@ from bookshop.graphql.runtime import (
     merge as merge_bookshop,
 )
 from bookshop.injectors import INJECTORS
-from graphql_codegen._generator._merge import (
+from spartan_graphql._generator._merge import (
     print_merge_template,
 )
-from graphql_codegen.runtime import ExecutionError, Operation, Request, merge
+from spartan_graphql.runtime import ExecutionError, Operation, Request, merge
 
 _PLACE_ORDER = """
 mutation PlaceOrder($order: PlaceOrderInput!, $note: String! = "gift") {

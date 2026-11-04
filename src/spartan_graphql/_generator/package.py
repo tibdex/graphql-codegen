@@ -19,9 +19,9 @@ from graphql import (
     visit,
 )
 
-from graphql_codegen import runtime
-from graphql_codegen._generator._annotation import AnnotationBuilder
-from graphql_codegen._generator._ast_nodes import (
+from spartan_graphql import runtime
+from spartan_graphql._generator._annotation import AnnotationBuilder
+from spartan_graphql._generator._ast_nodes import (
     FUTURE_ANNOTATIONS,
     import_as,
     module,
@@ -29,14 +29,14 @@ from graphql_codegen._generator._ast_nodes import (
     qualified,
     unparse,
 )
-from graphql_codegen._generator._data_type import DataTypeEmitter
-from graphql_codegen._generator._document import (
+from spartan_graphql._generator._data_type import DataTypeEmitter
+from spartan_graphql._generator._document import (
     get_transitively_spread_fragments,
     insert_typename,
     parse_operations,
 )
-from graphql_codegen._generator._document_module import document_modules
-from graphql_codegen._generator._imports import (
+from spartan_graphql._generator._document_module import document_modules
+from spartan_graphql._generator._imports import (
     DOCUMENT_PACKAGE,
     INJECTION_MODULE,
     RUNTIME_PACKAGE,
@@ -46,31 +46,31 @@ from graphql_codegen._generator._imports import (
     PackageModule,
     helper_imports,
 )
-from graphql_codegen._generator._injector import (
+from spartan_graphql._generator._injector import (
     emit_injector_module,
     get_injected_types,
     get_injections,
 )
-from graphql_codegen._generator._merge import print_merge_template
-from graphql_codegen._generator._naming import (
+from spartan_graphql._generator._merge import print_merge_template
+from spartan_graphql._generator._naming import (
     OperationSpellings,
     operation_spellings,
 )
-from graphql_codegen._generator._operation import (
+from spartan_graphql._generator._operation import (
     description_text,
     emit_operation_constant,
     emit_variables_type,
     strip_for_server,
 )
-from graphql_codegen._generator._scalar import check_scalars
-from graphql_codegen._generator._schema import prepare_schema
-from graphql_codegen._generator._schema_type import (
+from spartan_graphql._generator._scalar import check_scalars
+from spartan_graphql._generator._schema import prepare_schema
+from spartan_graphql._generator._schema_type import (
     emit_schema_module,
     get_reached_type_names,
 )
-from graphql_codegen._generator._selection import SelectionResolver
-from graphql_codegen._generator._structs import parse_struct_types
-from graphql_codegen._generator.spelling import (
+from spartan_graphql._generator._selection import SelectionResolver
+from spartan_graphql._generator._structs import parse_struct_types
+from spartan_graphql._generator.spelling import (
     PendingSpelling,
     SettledSpelling,
     ast_str,
@@ -78,9 +78,9 @@ from graphql_codegen._generator.spelling import (
     settle_module,
     settle_names,
 )
-from graphql_codegen._metadata import GENERATED_FILE_COMMENT_PREFIX
-from graphql_codegen.config import Config
-from graphql_codegen.document_sibling_module import DocumentSiblingModule
+from spartan_graphql._metadata import GENERATED_FILE_COMMENT_PREFIX
+from spartan_graphql.config import Config
+from spartan_graphql.document_sibling_module import DocumentSiblingModule
 
 _DO_NOT_EDIT: Final = "DO NOT EDIT."
 _GENERATED_FILE_COMMENT: Final = f"{GENERATED_FILE_COMMENT_PREFIX}. {_DO_NOT_EDIT}\n"

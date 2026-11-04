@@ -12,7 +12,7 @@
     "files.readonlyInclude": {
         "bookshop/*_graphql.py": true,
         "bookshop/graphql/**": true,
-        "src/graphql_codegen/_cli/_introspection_graphql.py": true
+        "src/spartan_graphql/_cli/_introspection_graphql.py": true
     },
     "files.trimFinalNewlines": true,
     "files.trimTrailingWhitespace": true,
@@ -25,6 +25,6 @@
     "search.exclude": {
         "bookshop/*_graphql.py": true,
         "bookshop/graphql/**": true,
-        "src/graphql_codegen/_cli/_introspection_graphql.py": true
+        "src/spartan_graphql/_cli/_introspection_graphql.py": true
     }
 }

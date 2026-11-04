@@ -17,7 +17,7 @@ from graphql import (
     parse,
 )
 
-from graphql_codegen._cli._parsing import (
+from spartan_graphql._cli._parsing import (
     check_all_read,
     optional,
     parse_at,
@@ -26,17 +26,17 @@ from graphql_codegen._cli._parsing import (
     parse_strings,
     required,
 )
-from graphql_codegen._cli._schema_pointer import SchemaPointer, parse_schema_pointer
-from graphql_codegen._cli._source import read_schema, read_sources
-from graphql_codegen._error_note import error_note
-from graphql_codegen._metadata import DISTRIBUTION_NAME, METADATA
-from graphql_codegen.config import Config
-from graphql_codegen.document_sibling_module import DocumentSiblingModule
-from graphql_codegen.generate import _Params
-from graphql_codegen.package_location import PackageLocation
-from graphql_codegen.scalar import Codec, Scalar
+from spartan_graphql._cli._schema_pointer import SchemaPointer, parse_schema_pointer
+from spartan_graphql._cli._source import read_schema, read_sources
+from spartan_graphql._error_note import error_note
+from spartan_graphql._metadata import DISTRIBUTION_NAME, METADATA
+from spartan_graphql.config import Config
+from spartan_graphql.document_sibling_module import DocumentSiblingModule
+from spartan_graphql.generate import _Params
+from spartan_graphql.package_location import PackageLocation
+from spartan_graphql.scalar import Codec, Scalar
 
-_EXTENSION_NAME: Final = "pythonCodegen"
+_EXTENSION_NAME: Final = "spartan"
 
 # As https://github.com/kamilkisiela/string-env-interpolation/blob/94c441088f2ba62c5f0a2a31b8b9728242184360/src/index.ts#L16, which graphql-config calls at https://github.com/graphql-hive/graphql-config/blob/3091fcc7259c2feeb9866994a6c3ca4fc6ddb7a0/src/helpers/cosmiconfig.ts#L24.
 _ENVIRONMENT_VARIABLE: Final = re.compile(

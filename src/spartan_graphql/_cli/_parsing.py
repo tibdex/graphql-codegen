@@ -1,7 +1,7 @@
 from collections.abc import Callable, Mapping
 from typing import cast
 
-from graphql_codegen._error_note import error_note
+from spartan_graphql._error_note import error_note
 
 
 def check_all_read(unread: dict[str, object], /) -> None:

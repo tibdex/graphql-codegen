@@ -3,9 +3,9 @@ from typing import Unpack
 
 from graphql import DocumentNode, GraphQLSchema
 
-from graphql_codegen._generator.package import PackageEmitter
-from graphql_codegen.config import Config
-from graphql_codegen.runtime._compat import TypedDict
+from spartan_graphql._generator.package import PackageEmitter
+from spartan_graphql.config import Config
+from spartan_graphql.runtime._compat import TypedDict
 
 
 class _Params(TypedDict, closed=True):

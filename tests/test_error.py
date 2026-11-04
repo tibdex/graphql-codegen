@@ -1,6 +1,6 @@
 from graphql import GraphQLError, GraphQLFormattedError, Source, SourceLocation
 
-from graphql_codegen.runtime import GraphqlError, Location
+from spartan_graphql.runtime import GraphqlError, Location
 
 
 def test_an_error_has_the_keys_graphql_core_formats_one_with() -> None:

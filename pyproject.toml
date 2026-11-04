@@ -21,7 +21,7 @@ dependencies = [
   # Python 3.15 is the first whose standard library has all it provides.
   "typing-extensions>=4.16.0; python_version < '3.15'",
 ]
-description = "graphql-codegen is now Spartan GraphQL: https://pypi.org/project/spartan-graphql"
+description = "Compile GraphQL documents into a typed Python package with no imposed transport, no runtime dependencies, and no redundant validation"
 keywords = [
   "client",
   "code generation",
@@ -32,22 +32,22 @@ keywords = [
 ]
 license = "MIT"
 license-files = ["LICENSE"]
-name = "graphql-codegen"
+name = "spartan-graphql"
 readme = "README.md"
 requires-python = ">=3.12"
-version = "1.0.3"
+version = "1.0.4"
 
 [project.optional-dependencies]
 # Only reading a YAML graphql-config file needs it.
 yaml = ["pyyaml>=6.0.3"]
 
 [project.scripts]
-graphql-codegen = "graphql_codegen._cli:main"
+spartan-graphql = "spartan_graphql._cli:main"
 
 [project.urls]
-Documentation = "https://github.com/tibdex/graphql-codegen#readme"
-Source = "https://github.com/tibdex/graphql-codegen"
-Issues = "https://github.com/tibdex/graphql-codegen/issues"
+Documentation = "https://github.com/tibdex/spartan-graphql#readme"
+Source = "https://github.com/tibdex/spartan-graphql"
+Issues = "https://github.com/tibdex/spartan-graphql/issues"
 
 [dependency-groups]
 dev = [
@@ -65,7 +65,7 @@ dev = [
 ]
 
 [tool.uv.build-backend]
-module-name = "graphql_codegen"
+module-name = "spartan_graphql"
 # The document `_introspection_graphql.py` is generated from, which only the tests regenerate it with.
 wheel-exclude = ["*.graphql"]
 
@@ -73,14 +73,14 @@ wheel-exclude = ["*.graphql"]
 branch = true
 # Combining is what merges the runtime's copy into the runtime, per `paths`.
 parallel = true
-# `python -m graphql_codegen` runs in a subprocess.
+# `python -m spartan_graphql` runs in a subprocess.
 patch = ["subprocess"]
 # The bookshop's copy of the runtime too: its tests exercise that copy.
-source_pkgs = ["bookshop.graphql.runtime", "graphql_codegen"]
+source_pkgs = ["bookshop.graphql.runtime", "spartan_graphql"]
 
 [tool.coverage.paths]
 # Each file of the bookshop's runtime counts as the one it is copied from, which `test_cli.py` checks it is, but for its first line.
-runtime = ["src/graphql_codegen/runtime/", "*/bookshop/graphql/runtime/"]
+runtime = ["src/spartan_graphql/runtime/", "*/bookshop/graphql/runtime/"]
 
 [tool.coverage.report]
 exclude_also = [
@@ -104,7 +104,7 @@ extend-exclude = [
   # Generated.
   "bookshop/graphql",
   "bookshop/*_graphql.py",
-  "src/graphql_codegen/_cli/*_graphql.py",
+  "src/spartan_graphql/_cli/*_graphql.py",
   # Its code blocks are the generated package's and the bookshop's modules verbatim, which `test_readme.py` checks.
   "README.md",
 ]
@@ -147,11 +147,11 @@ select = ["ALL"]
   "pytest-assert-in-except",
 ]
 "src/*" = ["private-member-access", "pytest-composite-assertion"]
-"src/graphql_codegen/runtime/*" = ["relative-imports"]
-"src/graphql_codegen/runtime/error.py" = [
+"src/spartan_graphql/runtime/*" = ["relative-imports"]
+"src/spartan_graphql/runtime/error.py" = [
   "non-pep695-generic-class", # A legacy `TypeVar`, since a default for a PEP 695 type parameter needs Python 3.13.
 ]
-"src/graphql_codegen/_cli/__init__.py" = ["print"]
+"src/spartan_graphql/_cli/__init__.py" = ["print"]
 "tests/__resources__/*" = ["implicit-namespace-package"]
 "tests/*" = [
   "any-type",

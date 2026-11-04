@@ -9,9 +9,9 @@ import pytest
 from graphql import GraphQLSchema
 
 import bookshop.transport
-from graphql_codegen import generate
-from graphql_codegen._cli._graphql_config import read_graphql_config
-from graphql_codegen.generate import _Params
+from spartan_graphql import generate
+from spartan_graphql._cli._graphql_config import read_graphql_config
+from spartan_graphql.generate import _Params
 from tests._bookshop import BOOKSHOP_DIRECTORY
 from tests._graphql_server import GraphqlHandler, answer_graphql
 from tests._server import PostHandler, serve

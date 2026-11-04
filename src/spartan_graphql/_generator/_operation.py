@@ -19,22 +19,22 @@ from graphql import (
     visit,
 )
 
-from graphql_codegen._generator._annotation import AnnotationBuilder
-from graphql_codegen._generator._ast_nodes import (
+from spartan_graphql._generator._annotation import AnnotationBuilder
+from spartan_graphql._generator._ast_nodes import (
     constant,
     documented,
     name,
     qualified,
 )
-from graphql_codegen._generator._injector import Injections
-from graphql_codegen._generator._naming import (
+from spartan_graphql._generator._injector import Injections
+from spartan_graphql._generator._naming import (
     BUILTINS,
     OPERATION_TYPE,
     RUNTIME,
     TYPING,
     OperationSpellings,
 )
-from graphql_codegen._generator._typed_dict import Key, emit_closed
+from spartan_graphql._generator._typed_dict import Key, emit_closed
 
 
 def description_text(description: StringValueNode | None, /) -> str:

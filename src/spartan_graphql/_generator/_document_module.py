@@ -2,9 +2,9 @@ import posixpath
 from collections.abc import Sequence
 from pathlib import PurePosixPath
 
-from graphql_codegen._generator._imports import DOCUMENT_PACKAGE
-from graphql_codegen._generator.spelling import candidates
-from graphql_codegen.document_sibling_module import DocumentSiblingModule
+from spartan_graphql._generator._imports import DOCUMENT_PACKAGE
+from spartan_graphql._generator.spelling import candidates
+from spartan_graphql.document_sibling_module import DocumentSiblingModule
 
 
 def _identifier(stem: str, /) -> str:

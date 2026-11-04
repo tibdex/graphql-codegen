@@ -2,7 +2,7 @@ from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from typing import Final, final
 
-from graphql_codegen._generator.spelling import (
+from spartan_graphql._generator.spelling import (
     PendingSpelling,
     SettledSpelling,
     settle_names,

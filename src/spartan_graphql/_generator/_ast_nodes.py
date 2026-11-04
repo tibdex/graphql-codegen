@@ -8,7 +8,7 @@ from tokenize import NEWLINE, STRING, generate_tokens
 from types import EllipsisType
 from typing import Final
 
-from graphql_codegen._generator.spelling import Spelling, ast_str
+from spartan_graphql._generator.spelling import Spelling, ast_str
 
 
 def name(spelling: Spelling, /) -> ast.Name:
