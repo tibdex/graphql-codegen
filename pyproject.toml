@@ -21,7 +21,7 @@ dependencies = [
   # Python 3.15 is the first whose standard library has all it provides.
   "typing-extensions>=4.16.0; python_version < '3.15'",
 ]
-description = "Compile GraphQL documents into a typed Python package with no imposed transport, no runtime dependencies, and no redundant validation"
+description = "graphql-codegen is now Spartan GraphQL: https://pypi.org/project/spartan-graphql"
 keywords = [
   "client",
   "code generation",
@@ -35,7 +35,7 @@ license-files = ["LICENSE"]
 name = "graphql-codegen"
 readme = "README.md"
 requires-python = ">=3.12"
-version = "1.0.2"
+version = "1.0.3"
 
 [project.optional-dependencies]
 # Only reading a YAML graphql-config file needs it.
