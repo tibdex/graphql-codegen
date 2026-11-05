@@ -5,9 +5,9 @@
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](https://github.com/tibdex/spartan-graphql/blob/main/LICENSE)
 [![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen?style=flat-square)](https://github.com/tibdex/spartan-graphql/blob/main/pyproject.toml)
 
-> **Spartan**, *adj.* … distinguished by simplicity, frugality, courage, or brevity of speech.
+> **Spartan**, _adj._ … distinguished by simplicity, frugality, courage, or brevity of speech.
 >
-> — *Oxford English Dictionary*
+> — _Oxford English Dictionary_
 
 Spartan GraphQL compiles GraphQL documents into a typed Python package, and stops there:
 
@@ -16,6 +16,7 @@ Spartan GraphQL compiles GraphQL documents into a typed Python package, and stop
 - **no redundant validation**: just dicts, statically checked[^type-checkers].
 
 Built-in:
+
 - `query`, `mutation`, and [`subscription`](#subscriptions) with their variables and selected fields typed;
 - [`union`, `interface`, `enum`, and `@oneOf` `input`](#operation-types) typed as Python unions;
 - [`fragment`s](#fragments) typed on their own;
@@ -23,6 +24,7 @@ Built-in:
 - [partial responses](#errors) raised as errors, or returned with their data typed.
 
 Opt-in:
+
 - [merging](#merging) operations into a single transport request;
 - [non-null assertions](#non-null-fields) on fields the schema declares nullable;
 - [structs](#structs) typing a JSON `scalar` as an `input`;
@@ -176,7 +178,11 @@ What may be absent is a [`NotRequired`](https://docs.python.org/3/library/typing
 <!-- excerpt: bookshop/app.graphql -->
 
 ```graphql
-query ListTitles($genres: [Genre!], $first: Int, $withGenres: Boolean! = false) {
+query ListTitles(
+  $genres: [Genre!]
+  $first: Int
+  $withGenres: Boolean! = false
+) {
   books(genres: $genres, first: $first) {
     ...TitleCard
   }
@@ -427,13 +433,14 @@ Only the names the generator adds, such as that `_builtins` import alias or `_Ge
 
 Shipping a transport is a slippery slope: an HTTP client to pick, then headers, authentication, timeouts, and retries.
 Every project has its own opinion on each of these, and the GraphQL specification itself [leaves the transport to each service](https://spec.graphql.org/September2025/#note-81789).
-*The only winning move is not to play.*
+_The only winning move is not to play._
 
 The small [sans-IO](https://sans-io.readthedocs.io) runtime copied into the generated package therefore has a [public API](https://github.com/tibdex/spartan-graphql/blob/main/bookshop/graphql/runtime/__init__.py) limited to:
 
 <!-- excerpt: bookshop/graphql/runtime/__init__.py -->
 
 ```python
+from . import http as http
 from .error import (
     Error as Error,
     ExecutionError as ExecutionError,
@@ -471,13 +478,11 @@ For example, the bookshop's asynchronous transport uses [httpx2](https://pydanti
 <!-- excerpt: bookshop/async_transport.py -->
 
 ```python
-GRAPHQL_RESPONSE: Final = "application/graphql-response+json"
+from bookshop.graphql.runtime.http import ACCEPT, CONTENT_TYPE, is_graphql_response
+
 http: Final = httpx2.AsyncClient(
     base_url="https://bookshop.example",
-    headers={
-        "Accept": GRAPHQL_RESPONSE,
-        "Content-Type": "application/json",
-    },
+    headers={"Accept": ACCEPT, "Content-Type": CONTENT_TYPE},
 )
 
 
@@ -491,7 +496,7 @@ async def send[Data](
     response = await http.post("/graphql", content=bytes(prepared), timeout=timeout)
 
     # GraphQL over HTTP sends a request error as a response with a 4xx or 5xx status.
-    if not response.headers.get("Content-Type", "").startswith(GRAPHQL_RESPONSE):
+    if not is_graphql_response(content_type=response.headers.get("Content-Type")):
         response.raise_for_status()
 
     return prepared.parse(response.content)
@@ -1044,15 +1049,13 @@ ATTEMPTS: Final = 3
     attempts_left = ATTEMPTS
     # …
     while True:
-        # Declared, since mypy types a variable from its first assignment alone.
         response: HTTPResponse | HTTPError
 
         try:
             response = _post(
                 "/graphql",
                 request_body,
-                # Falls back to the plain JSON media type for a server predating the GraphQL one.
-                accept="application/graphql-response+json, application/json;q=0.9",
+                accept=ACCEPT,
                 timeout=timeout,
             )
         # …
@@ -1125,19 +1128,111 @@ from spartan_graphql.package_location import PackageLocation as PackageLocation
 from spartan_graphql.scalar import Codec as Codec, Scalar as Scalar
 ```
 
-[^typing-extensions]: Before Python 3.15, the generated package needs [`typing-extensions`](https://github.com/python/typing_extensions) to access the latest [`typing`](https://docs.python.org/3/library/typing.html) features.
-The generator declares that dependency, but the generated package is copied into your project rather than installed, so add `typing-extensions` to your own dependencies.
+## Coming from another library
+
+Most GraphQL code generators for Python give you a client class with one method per operation, with the variables as parameters and the response data as a model class.
+Here, the operation variables and response data are `TypedDict`s.
+The rest of the client is the [transport you write](#sans-io).
+With no class gathering the operations, a document's operations can live in a module next to the document: see [colocation](#colocation).
+
+Calling an operation:
+
+<!-- excerpt: bookshop/quickstart.py -->
+
+```diff
+-from bookshop.client import client
++from bookshop.transport import send
+
+-data = await client.get_order(id="o1")
+-order = data.order
++data = send(GetOrder({"id": "o1"}))
++order = data["order"]
+```
+
+Reading an `enum` as a `Literal`:
+
+<!-- excerpt: bookshop/app.py -->
+
+```diff
+ def status_label(status: OrderStatus, /) -> str:
+     match status:
+-        case OrderStatus.PENDING:
++        case "PENDING":
+             return "Being prepared"
+```
+
+Telling the members of a `union` or an `interface` apart by the presence of a key or by `__typename` rather than by class:
+
+<!-- excerpt: bookshop/app.py -->
+
+```diff
+-    if isinstance(publication, PublicationBook | PublicationMagazine):
+-        return f"{publication.title} has {publication.pages} pages."
++    if "pages" in publication:
++        return f"{publication['title']} has {publication['pages']} pages."
+
+-    match publication:
+-        case PublicationAudiobook():
+-            return f"{publication.title} lasts {publication.duration} minutes."
++    match publication["__typename"]:
++        case "Audiobook":
++            return f"{publication['title']} lasts {publication['duration']} minutes."
+```
+
+Handling a [partial response](#errors) (returned rather than raised) with its data still typed:
+
+<!-- excerpt: bookshop/app.py -->
+
+```diff
+-    try:
+-        result = await client.get_order(id=order_id)
+-    except GraphQLClientError as error:
+-        assert_type(error.data, dict[str, Any] | None)
+-        return f"Partially loaded: {error.data} ({error})."
++    result = send(GetOrder({"id": order_id}).returning_error())
++
++    if isinstance(result, ExecutionError):
++        data = result.parse_data()
++        assert_type(data, GetOrderData | None)
++        return f"Partially loaded: {data} ({result!s})."
+```
+
+Configuring in [graphql-config](#config) rather than in `pyproject.toml`:
+
+<!-- excerpt: bookshop/graphql.config.yml -->
+
+```diff
+-[tool.graphql.codegen]
+-schema_path = "schema.graphqls"
+-queries_path = "."
+-target_package_name = "client"
++schema: schema.graphqls
++documents: "*.graphql"
++# …
++extensions:
++  spartan:
++    # …
++    moduleRoot: ..
++    # …
++    package: bookshop.graphql
+```
+
+[^typing-extensions]:
+    Before Python 3.15, the generated package needs [`typing-extensions`](https://github.com/python/typing_extensions) to access the latest [`typing`](https://docs.python.org/3/library/typing.html) features.
+    The generator declares that dependency, but the generated package is copied into your project rather than installed, so add `typing-extensions` to your own dependencies.
 
 [^type-checkers]: The generated code is tested against [mypy](https://github.com/python/mypy), [Pyright](https://github.com/microsoft/pyright), [Pyrefly](https://github.com/facebook/pyrefly), and [ty](https://github.com/astral-sh/ty).
 
-[^bootstrapping]: This library is partly [bootstrapped](https://en.wikipedia.org/wiki/Bootstrapping_(compilers)): to fetch a schema from a URL, [it uses an operation](https://github.com/tibdex/spartan-graphql/blob/main/src/spartan_graphql/_cli/_introspection.py) it generated itself from [`_introspection.graphql`](https://github.com/tibdex/spartan-graphql/blob/main/src/spartan_graphql/_cli/_introspection.graphql).
+[^bootstrapping]: This library is partly [bootstrapped](<https://en.wikipedia.org/wiki/Bootstrapping_(compilers)>): to fetch a schema from a URL, [it uses an operation](https://github.com/tibdex/spartan-graphql/blob/main/src/spartan_graphql/_cli/_introspection.py) it generated itself from [`_introspection.graphql`](https://github.com/tibdex/spartan-graphql/blob/main/src/spartan_graphql/_cli/_introspection.graphql).
 
-[^yaml]: A YAML config, like the quick start's, needs the `yaml` extra: install `spartan-graphql[yaml]` instead.
-JSON and TOML configs need nothing more.
+[^yaml]:
+    A YAML config, like the quick start's, needs the `yaml` extra: install `spartan-graphql[yaml]` instead.
+    JSON and TOML configs need nothing more.
 
-[^breaking-changes]: Well-behaved GraphQL APIs [avoid breaking changes](https://graphql.org/learn/schema-design/#versioning), adding fields and [deprecating](https://spec.graphql.org/September2025/#sec--deprecated) old ones instead.
-Most breaking changes made after codegen never reach the code anyway: removing or renaming a field, changing its arguments, or turning its type from an object into a leaf or the reverse invalidates the operation, so the server rejects it, and `PreparedRequest.parse()` raises a [`RequestError`](#errors).
-The few left are a field becoming nullable, its leaf type changing, or a field switching between a list and a single value.
-Client-side validation would catch these as the response arrives.
-Without it, they surface deeper in your code, or not at all.
-The more often you rerun the codegen against the deployed schema, the sooner your type checker catches such a change.
+[^breaking-changes]:
+    Well-behaved GraphQL APIs [avoid breaking changes](https://graphql.org/learn/schema-design/#versioning), adding fields and [deprecating](https://spec.graphql.org/September2025/#sec--deprecated) old ones instead.
+    Most breaking changes made after codegen never reach the code anyway: removing or renaming a field, changing its arguments, or turning its type from an object into a leaf or the reverse invalidates the operation, so the server rejects it, and `PreparedRequest.parse()` raises a [`RequestError`](#errors).
+    The few left are a field becoming nullable, its leaf type changing, or a field switching between a list and a single value.
+    Client-side validation would catch these as the response arrives.
+    Without it, they surface deeper in your code, or not at all.
+    The more often you rerun the codegen against the deployed schema, the sooner your type checker catches such a change.

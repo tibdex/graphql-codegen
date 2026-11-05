@@ -39,7 +39,11 @@ query Search($text: String!) {
 }
 
 "The first books, with their genre when asked for."
-query ListTitles($genres: [Genre!], $first: Int, $withGenres: Boolean! = false) {
+query ListTitles(
+  $genres: [Genre!]
+  $first: Int
+  $withGenres: Boolean! = false
+) {
   books(genres: $genres, first: $first) {
     ...TitleCard
   }

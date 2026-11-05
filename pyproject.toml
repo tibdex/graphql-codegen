@@ -35,7 +35,7 @@ license-files = ["LICENSE"]
 name = "spartan-graphql"
 readme = "README.md"
 requires-python = ">=3.12"
-version = "1.0.4"
+version = "1.1.0"
 
 [project.optional-dependencies]
 # Only reading a YAML graphql-config file needs it.

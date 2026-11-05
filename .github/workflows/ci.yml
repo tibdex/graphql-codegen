@@ -3,7 +3,6 @@ name: CI
 on:
   pull_request:
 
-
 jobs:
   prek:
     runs-on: ubuntu-26.04

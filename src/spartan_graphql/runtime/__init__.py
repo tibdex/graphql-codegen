@@ -1,5 +1,6 @@
 # Copied into each generated package, where this line becomes a `DO NOT EDIT` header.
 
+from . import http as http
 from .error import (
     Error as Error,
     ExecutionError as ExecutionError,
