@@ -48,7 +48,6 @@ type Mutation {
 
   Null, with an error saying why, for an order that has.
   Nullable so that when several orders are canceled in one request, one failure leaves the others' results intact.
-
   """
   cancelOrder(input: CancelOrderInput!): Order
 

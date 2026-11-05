@@ -6,14 +6,11 @@ from typing import Final, Literal
 import httpx2
 
 from bookshop.graphql.runtime import Request
+from bookshop.graphql.runtime.http import ACCEPT, CONTENT_TYPE, is_graphql_response
 
-GRAPHQL_RESPONSE: Final = "application/graphql-response+json"
 http: Final = httpx2.AsyncClient(
     base_url="https://bookshop.example",
-    headers={
-        "Accept": GRAPHQL_RESPONSE,
-        "Content-Type": "application/json",
-    },
+    headers={"Accept": ACCEPT, "Content-Type": CONTENT_TYPE},
 )
 
 
@@ -27,7 +24,7 @@ async def send[Data](
     response = await http.post("/graphql", content=bytes(prepared), timeout=timeout)
 
     # GraphQL over HTTP sends a request error as a response with a 4xx or 5xx status.
-    if not response.headers.get("Content-Type", "").startswith(GRAPHQL_RESPONSE):
+    if not is_graphql_response(content_type=response.headers.get("Content-Type")):
         response.raise_for_status()
 
     return prepared.parse(response.content)

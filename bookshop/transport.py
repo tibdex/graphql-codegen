@@ -7,6 +7,7 @@ from urllib.error import HTTPError
 from urllib.request import Request as HTTPRequest, urlopen
 
 from bookshop.graphql.runtime import Request
+from bookshop.graphql.runtime.http import ACCEPT, CONTENT_TYPE, is_graphql_response
 from bookshop.injectors import INJECTORS
 
 BASE_URL: Final = "https://bookshop.example"
@@ -18,7 +19,7 @@ def _post(
 ) -> HTTPResponse:
     request = HTTPRequest(  # noqa: S310
         BASE_URL + path,
-        headers={"Accept": accept, "Content-Type": "application/json"},
+        headers={"Accept": accept, "Content-Type": CONTENT_TYPE},
         data=body,
     )
 
@@ -41,20 +42,18 @@ def send[Data](
 
     # A connection per call keeps the example simple: an HTTP library, such as httpx2 in `async_transport.py`, would pool them.
     while True:
-        # Declared, since mypy types a variable from its first assignment alone.
         response: HTTPResponse | HTTPError
 
         try:
             response = _post(
                 "/graphql",
                 request_body,
-                # Falls back to the plain JSON media type for a server predating the GraphQL one.
-                accept="application/graphql-response+json, application/json;q=0.9",
+                accept=ACCEPT,
                 timeout=timeout,
             )
         except HTTPError as error:
             # GraphQL over HTTP sends a request error as a response with a 4xx or 5xx status.
-            if error.headers.get_content_type() != "application/graphql-response+json":
+            if not is_graphql_response(content_type=error.headers.get("Content-Type")):
                 raise
 
             response = error

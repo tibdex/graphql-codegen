@@ -27,3 +27,14 @@ language = "system"
 entry = "uv check --preview-features check-command"
 pass_filenames = false
 always_run = true
+
+# From npm directly, with a Node that prek installs itself: no mirror repository, nothing for contributors to install.
+[[repos.hooks]]
+id = "prettier"
+name = "prettier"
+language = "node"
+additional_dependencies = ["prettier@3.9.10"]
+# README code blocks are excerpts of formatted files, checked by `test_readme.py`, with `# …` lines prettier would move.
+entry = "prettier --write --ignore-unknown --embedded-language-formatting=off"
+# By extension, since prek does not know `.graphqls` as GraphQL.
+files = '\.(graphqls?|md|ya?ml)$'
